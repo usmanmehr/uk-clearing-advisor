@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  UK Clearing Advisor - Results Day scaling. A scheduler Lambda sets
+  provisioned concurrency on the SearchCourses "live" alias and raises the
+  API throttle at 04:00 UTC on 13 Aug 2026, then reverts both at 20:00 UTC.
+
+Parameters:
+  ArtifactsBucket: { Type: String, Default: uk-clearing-advisor-artifacts-REPLACE_ACCOUNT_ID }
+  ComputeStackName: { Type: String, Default: uk-clearing-advisor-compute }
+  ApiStackName: { Type: String, Default: uk-clearing-advisor-api }
+  SearchFunctionName: { Type: String, Default: ClearingAdvisor-SearchCourses }
+  Alias: { Type: String, Default: live }
+  PeakConcurrency: { Type: Number, Default: 100 }
+  UpRate: { Type: Number, Default: 400 }
+  UpBurst: { Type: Number, Default: 800 }
+  BaseRate: { Type: Number, Default: 50 }
+  BaseBurst: { Type: Number, Default: 100 }
+  ScaleUpCron: { Type: String, Default: 'cron(0 4 13 8 ? 2026)' }
+  ScaleDownCron: { Type: String, Default: 'cron(0 20 13 8 ? 2026)' }
+
+Resources:
+
+  ScheduleManagerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: /aws/lambda/ClearingAdvisor-ScheduleManager
+      RetentionInDays: 14
+
+  ScheduleManagerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: scale-controls
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'lambda:PutProvisionedConcurrencyConfig'
+                  - 'lambda:DeleteProvisionedConcurrencyConfig'
+                  - 'lambda:GetProvisionedConcurrencyConfig'
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${SearchFunctionName}'
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${SearchFunctionName}:*'
+              - Effect: Allow
+                Action: ['apigateway:PATCH', 'apigateway:GET']
+                Resource: !Sub 'arn:aws:apigateway:${AWS::Region}::/apis/*/stages/*'
+              # Required because the stage has access logging; UpdateStage
+              # re-asserts the CloudWatch Logs delivery on each call.
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogDelivery'
+                  - 'logs:GetLogDelivery'
+                  - 'logs:UpdateLogDelivery'
+                  - 'logs:DeleteLogDelivery'
+                  - 'logs:ListLogDeliveries'
+                  - 'logs:PutResourcePolicy'
+                  - 'logs:DescribeResourcePolicies'
+                  - 'logs:DescribeLogGroups'
+                Resource: '*'
+
+  ScheduleManagerFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ScheduleManagerLogGroup
+    Properties:
+      FunctionName: ClearingAdvisor-ScheduleManager
+      Runtime: nodejs22.x
+      Handler: index.handler
+      MemorySize: 256
+      Timeout: 60
+      Role: !GetAtt ScheduleManagerRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactsBucket
+        S3Key: lambda/ScheduleManager.zip
+      Environment:
+        Variables:
+          FUNCTION_NAME: !Ref SearchFunctionName
+          ALIAS: !Ref Alias
+          PEAK: !Ref PeakConcurrency
+          API_ID:
+            Fn::ImportValue: !Sub '${ApiStackName}-ApiId'
+          UP_RATE: !Ref UpRate
+          UP_BURST: !Ref UpBurst
+          BASE_RATE: !Ref BaseRate
+          BASE_BURST: !Ref BaseBurst
+
+  ScaleUpRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: ClearingAdvisor-ScaleUp
+      ScheduleExpression: !Ref ScaleUpCron
+      State: ENABLED
+      Targets:
+        - Id: ScaleUp
+          Arn: !GetAtt ScheduleManagerFunction.Arn
+          Input: '{"action":"up"}'
+
+  ScaleDownRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: ClearingAdvisor-ScaleDown
+      ScheduleExpression: !Ref ScaleDownCron
+      State: ENABLED
+      Targets:
+        - Id: ScaleDown
+          Arn: !GetAtt ScheduleManagerFunction.Arn
+          Input: '{"action":"down"}'
+
+  ScaleUpPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ScheduleManagerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ScaleUpRule.Arn
+  ScaleDownPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ScheduleManagerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ScaleDownRule.Arn
+
+Outputs:
+  ScheduleManagerName:
+    Value: !Ref ScheduleManagerFunction

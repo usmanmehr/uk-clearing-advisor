@@ -1,0 +1,20 @@
+# Build artefacts
+build/
+*.zip
+
+# Logs and temp
+*.log
+cron.log
+run.log
+.DS_Store
+__pycache__/
+*.pyc
+
+# Local secrets / config (never commit)
+.env
+clearing.env
+*.pem
+*.key
+
+# Deployment record with live account-specific IDs (keep local, not public)
+DEPLOYMENT.md

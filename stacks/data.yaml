@@ -1,0 +1,220 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  UK Clearing Advisor - Data stack. All DynamoDB tables (on-demand,
+  encrypted at rest, point-in-time recovery, TTL where applicable).
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  TablePrefix:
+    Type: String
+    Default: ClearingAdvisor
+    Description: Prefix for all table names.
+
+Resources:
+
+  # Persistent university contact/metadata. No TTL (reference data).
+  UniversityContactsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${TablePrefix}-UniversityContacts'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: providerCode
+          AttributeType: S
+      KeySchema:
+        - AttributeName: providerCode
+          KeyType: HASH
+      Tags:
+        - { Key: Application, Value: uk-clearing-advisor }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # Short-lived cache of merged UCAS + Discover Uni data.
+  ClearingCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${TablePrefix}-ClearingCache'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      AttributeDefinitions:
+        - { AttributeName: cacheKey, AttributeType: S }
+        - { AttributeName: provider, AttributeType: S }
+      KeySchema:
+        - { AttributeName: cacheKey, KeyType: HASH }
+        - { AttributeName: provider, KeyType: RANGE }
+      Tags:
+        - { Key: Application, Value: uk-clearing-advisor }
+        - { Key: Environment, Value: !Ref Environment }
+
+  ScholarshipsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${TablePrefix}-Scholarships'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - { AttributeName: universityId, AttributeType: S }
+        - { AttributeName: scholarshipId, AttributeType: S }
+        - { AttributeName: subjectGroup, AttributeType: S }
+      KeySchema:
+        - { AttributeName: universityId, KeyType: HASH }
+        - { AttributeName: scholarshipId, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: SubjectIndex
+          KeySchema:
+            - { AttributeName: subjectGroup, KeyType: HASH }
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - { Key: Application, Value: uk-clearing-advisor }
+        - { Key: Environment, Value: !Ref Environment }
+
+  ChangeLogTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${TablePrefix}-ChangeLog'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      AttributeDefinitions:
+        - { AttributeName: changeDate, AttributeType: S }
+        - { AttributeName: changeTimestamp, AttributeType: S }
+      KeySchema:
+        - { AttributeName: changeDate, KeyType: HASH }
+        - { AttributeName: changeTimestamp, KeyType: RANGE }
+      Tags:
+        - { Key: Application, Value: uk-clearing-advisor }
+        - { Key: Environment, Value: !Ref Environment }
+
+  QueryCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${TablePrefix}-QueryCache'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      AttributeDefinitions:
+        - { AttributeName: queryId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: queryId, KeyType: HASH }
+      Tags:
+        - { Key: Application, Value: uk-clearing-advisor }
+        - { Key: Environment, Value: !Ref Environment }
+
+  RateLimitsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${TablePrefix}-RateLimits'
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      AttributeDefinitions:
+        - { AttributeName: limitKey, AttributeType: S }
+        - { AttributeName: windowStart, AttributeType: S }
+      KeySchema:
+        - { AttributeName: limitKey, KeyType: HASH }
+        - { AttributeName: windowStart, KeyType: RANGE }
+      Tags:
+        - { Key: Application, Value: uk-clearing-advisor }
+        - { Key: Environment, Value: !Ref Environment }
+
+  SubjectDefaultsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${TablePrefix}-SubjectDefaults'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - { AttributeName: subjectGroup, AttributeType: S }
+      KeySchema:
+        - { AttributeName: subjectGroup, KeyType: HASH }
+      Tags:
+        - { Key: Application, Value: uk-clearing-advisor }
+        - { Key: Environment, Value: !Ref Environment }
+
+  CUGRankingsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${TablePrefix}-CUGRankings'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      AttributeDefinitions:
+        - { AttributeName: providerCode, AttributeType: S }
+        - { AttributeName: subjectCode, AttributeType: S }
+      KeySchema:
+        - { AttributeName: providerCode, KeyType: HASH }
+        - { AttributeName: subjectCode, KeyType: RANGE }
+      Tags:
+        - { Key: Application, Value: uk-clearing-advisor }
+        - { Key: Environment, Value: !Ref Environment }
+
+Outputs:
+  UniversityContactsTable:
+    Value: !Ref UniversityContactsTable
+    Export: { Name: !Sub '${AWS::StackName}-UniversityContactsTable' }
+  ClearingCacheTable:
+    Value: !Ref ClearingCacheTable
+    Export: { Name: !Sub '${AWS::StackName}-ClearingCacheTable' }
+  ScholarshipsTable:
+    Value: !Ref ScholarshipsTable
+    Export: { Name: !Sub '${AWS::StackName}-ScholarshipsTable' }
+  ChangeLogTable:
+    Value: !Ref ChangeLogTable
+    Export: { Name: !Sub '${AWS::StackName}-ChangeLogTable' }
+  QueryCacheTable:
+    Value: !Ref QueryCacheTable
+    Export: { Name: !Sub '${AWS::StackName}-QueryCacheTable' }
+  RateLimitsTable:
+    Value: !Ref RateLimitsTable
+    Export: { Name: !Sub '${AWS::StackName}-RateLimitsTable' }
+  SubjectDefaultsTable:
+    Value: !Ref SubjectDefaultsTable
+    Export: { Name: !Sub '${AWS::StackName}-SubjectDefaultsTable' }
+  CUGRankingsTable:
+    Value: !Ref CUGRankingsTable
+    Export: { Name: !Sub '${AWS::StackName}-CUGRankingsTable' }

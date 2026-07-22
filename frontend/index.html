@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Find undergraduate courses in UCAS Clearing 2026 across UK universities, ranked by graduate employability and salary.">
+  <meta name="theme-color" content="#0f2247">
+  <title>UK Clearing Advisor - Find your course in Clearing 2026</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#form-heading">Skip to search</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">UC</span>
+        <span class="brand-name">UK Clearing Advisor</span>
+      </div>
+      <nav class="header-nav" aria-label="Primary">
+        <span class="pill">Clearing 2026</span>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="wrap hero-inner">
+      <div class="hero-copy">
+        <h1>Find the right course in Clearing 2026</h1>
+        <p class="lede">
+          Enter your A-levels and what you want to study. We rank undergraduate
+          courses across UK universities by graduate employability and salary,
+          in seconds.
+        </p>
+        <ul class="hero-points">
+          <li>Ranked by graduate outcomes and value for money</li>
+          <li>Clearing hotlines and pages for every match</li>
+          <li>No sign-up. No personal data collected.</li>
+        </ul>
+      </div>
+      <dl class="hero-stats" aria-label="At a glance">
+        <div><dt>44</dt><dd>universities tracked</dd></div>
+        <div><dt>46</dt><dd>subject areas</dd></div>
+        <div><dt>&lt;1s</dt><dd>typical results time</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <main class="wrap main-grid" id="main">
+    <section aria-labelledby="form-heading" class="card form-card">
+      <h2 id="form-heading">Tell us about you</h2>
+      <p class="section-sub">All fields stay on your device. Nothing is stored against you.</p>
+      <form id="search-form" novalidate>
+        <div class="field">
+          <label for="course-interest">What do you want to study?</label>
+          <input type="text" id="course-interest" name="courseInterest"
+                 list="subject-list" autocomplete="off"
+                 placeholder="For example, Economics" aria-describedby="ci-help">
+          <datalist id="subject-list"></datalist>
+          <p id="ci-help" class="help">Free text. Leave blank to see the strongest universities across all subjects.</p>
+        </div>
+
+        <fieldset>
+          <legend>Your A-levels (two to four)</legend>
+          <div id="alevels"></div>
+          <button type="button" id="add-alevel" class="secondary small">+ Add another A-level</button>
+        </fieldset>
+
+        <div class="grid">
+          <div class="field">
+            <label for="priority">Sort by</label>
+            <select id="priority" name="priority">
+              <option value="balanced">Balanced</option>
+              <option value="salary">Graduate salary</option>
+              <option value="employability">Employability</option>
+              <option value="ranking">University ranking</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="location">Location</label>
+            <select id="location" name="location">
+              <option value="any">Anywhere in the UK</option>
+              <option value="england">England</option>
+              <option value="scotland">Scotland</option>
+              <option value="wales">Wales</option>
+              <option value="ni">Northern Ireland</option>
+              <option value="london">London</option>
+            </select>
+          </div>
+          <div class="field checkbox">
+            <input type="checkbox" id="russellGroupOnly" name="russellGroupOnly">
+            <label for="russellGroupOnly">Russell Group only</label>
+          </div>
+        </div>
+
+        <!-- Honeypot: hidden from humans, must stay empty. -->
+        <input type="text" name="website" id="website" autocomplete="off"
+               tabindex="-1" aria-hidden="true"
+               style="display:none; position:absolute; left:-9999px;">
+
+        <button type="submit" id="submit-btn" disabled>Find courses</button>
+      </form>
+    </section>
+
+    <aside class="side">
+      <div class="card info-card">
+        <h2 class="h3">How it works</h2>
+        <ol class="steps">
+          <li><span>1</span> Add your A-levels and subject interest.</li>
+          <li><span>2</span> We match courses you can realistically get.</li>
+          <li><span>3</span> Call the clearing hotline and secure your place.</li>
+        </ol>
+      </div>
+      <div class="card note-card">
+        <h2 class="h3">Good to know</h2>
+        <p>Figures are estimates from national subject data. Live vacancies are
+          confirmed by phone on Results Day, Thursday 13 August 2026.</p>
+      </div>
+    </aside>
+
+    <section aria-labelledby="results-heading" class="card results-card" id="results-section" hidden>
+      <h2 id="results-heading">Results</h2>
+      <p id="results-summary" role="status" aria-live="polite"></p>
+      <div id="results" class="results"></div>
+      <button type="button" id="show-more" class="secondary" hidden>Show more</button>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <p><strong>UK Clearing Advisor.</strong> Plain data, no tracking.</p>
+      <p class="disclaimer">
+        Estimated data based on seeded university information and national
+        subject averages. This service is available in the United Kingdom only.
+        No personal data is collected.
+      </p>
+    </div>
+  </footer>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

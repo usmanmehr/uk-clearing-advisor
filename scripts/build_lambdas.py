@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Package each Lambda as a zip (index.mjs + shared.mjs). No node/npm needed;
+handlers use only the AWS SDK v3 bundled in the Node.js 22 runtime."""
+import os
+import zipfile
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LAMBDA_DIR = os.path.join(ROOT, "lambda")
+SHARED = os.path.join(LAMBDA_DIR, "shared", "shared.mjs")
+OUT = os.path.join(ROOT, "build")
+FUNCTIONS = ["SearchCourses", "GetSubjects", "GetUniversities", "GetScholarships",
+             "GenerateExport", "DailyScraper", "WarmUp", "ScheduleManager"]
+
+
+def build():
+    os.makedirs(OUT, exist_ok=True)
+    for fn in FUNCTIONS:
+        src = os.path.join(LAMBDA_DIR, fn, "index.mjs")
+        zip_path = os.path.join(OUT, fn + ".zip")
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+            z.write(src, "index.mjs")
+            z.write(SHARED, "shared.mjs")
+        print("Built %s (%d bytes)" % (zip_path, os.path.getsize(zip_path)))
+
+
+if __name__ == "__main__":
+    build()

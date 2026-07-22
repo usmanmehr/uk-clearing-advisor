@@ -1,0 +1,245 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  UK Clearing Advisor - Grafana on EC2. Elastic IP, Cognito OAuth login,
+  IAM instance role for CloudWatch (no keys), locked-down security group,
+  self-signed HTTPS via nginx, auto-provisioned CloudWatch datasource and
+  dashboard. Admin password stored in Secrets Manager.
+
+Parameters:
+  VpcId: { Type: 'AWS::EC2::VPC::Id', Default: REPLACE_VPC_ID }
+  SubnetId: { Type: 'AWS::EC2::Subnet::Id', Default: REPLACE_SUBNET_ID }
+  InstanceType: { Type: String, Default: t3.small }
+  ArtifactsBucket: { Type: String, Default: uk-clearing-advisor-artifacts-REPLACE_ACCOUNT_ID }
+  AllowedCidr:
+    Type: String
+    Default: 127.0.0.1/32
+    Description: >
+      CIDR allowed to reach the instance directly over HTTPS:443 (admin
+      fallback). UK users reach Grafana via the CloudFront front door, not
+      this. Admin access is also available via SSM Session Manager.
+  CloudFrontPrefixList:
+    Type: String
+    Default: pl-93a247fa
+    Description: CloudFront origin-facing managed prefix list (eu-west-2) for port 80.
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Resources:
+
+  GrafanaAdminSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: ClearingAdvisor-GrafanaAdmin
+      GenerateSecretString:
+        PasswordLength: 20
+        ExcludePunctuation: true
+
+  GrafanaEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: clearing-advisor-grafana
+      AdminCreateUserConfig: { AllowAdminCreateUserOnly: true }
+      AutoVerifiedAttributes: [email]
+      UsernameAttributes: [email]
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub 'clearing-advisor-${AWS::AccountId}'
+      UserPoolId: !Ref UserPool
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: grafana
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs:
+        - !Sub 'https://${GrafanaEIP}.nip.io/login/generic_oauth'
+      LogoutURLs:
+        - !Sub 'https://${GrafanaEIP}.nip.io/'
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess
+      Policies:
+        - PolicyName: grafana-extra
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:StartQuery'
+                  - 'logs:StopQuery'
+                  - 'logs:GetQueryResults'
+                  - 'logs:GetLogEvents'
+                  - 'logs:DescribeLogGroups'
+                  - 'cloudwatch:GetMetricData'
+                  - 'cloudwatch:ListMetrics'
+                  - 'ec2:DescribeRegions'
+                  - 'tag:GetResources'
+                Resource: '*'
+              - Effect: Allow
+                Action: 'secretsmanager:GetSecretValue'
+                Resource: !Ref GrafanaAdminSecret
+              - Effect: Allow
+                Action: 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${ArtifactsBucket}/grafana/*'
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  GrafanaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Grafana HTTPS from allowed CIDR only (admin via SSM)
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref AllowedCidr
+          Description: Direct HTTPS admin fallback
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourcePrefixListId: !Ref CloudFrontPrefixList
+          Description: CloudFront origin (UK front door)
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  GrafanaInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmiId
+      SubnetId: !Ref SubnetId
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds: [!GetAtt GrafanaSecurityGroup.GroupId]
+      Tags:
+        - { Key: Name, Value: clearing-advisor-grafana }
+        - { Key: Application, Value: uk-clearing-advisor }
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -x
+          exec > /var/log/grafana-bootstrap.log 2>&1
+          COGNITO="https://clearing-advisor-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com"
+          HOST="${GrafanaEIP}.nip.io"
+
+          cat >/etc/yum.repos.d/grafana.repo <<'EOF'
+          [grafana]
+          name=grafana
+          baseurl=https://rpm.grafana.com
+          repo_gpgcheck=1
+          enabled=1
+          gpgcheck=1
+          gpgkey=https://rpm.grafana.com/gpg.key
+          sslverify=1
+          EOF
+
+          dnf install -y grafana nginx openssl
+
+          PW=$(aws secretsmanager get-secret-value --secret-id ${GrafanaAdminSecret} --query SecretString --output text --region ${AWS::Region})
+
+          # Self-signed TLS for the nip.io host.
+          openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+            -keyout /etc/ssl/grafana.key -out /etc/ssl/grafana.crt -subj "/CN=$HOST"
+
+          cat >/etc/nginx/conf.d/grafana.conf <<EOF
+          server {
+            listen 443 ssl;
+            server_name _;
+            ssl_certificate /etc/ssl/grafana.crt;
+            ssl_certificate_key /etc/ssl/grafana.key;
+            location / {
+              proxy_pass http://127.0.0.1:3000;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto \$scheme;
+            }
+          }
+          EOF
+
+          cat >>/etc/sysconfig/grafana-server <<EOF
+          GF_SERVER_ROOT_URL=https://$HOST/
+          GF_SECURITY_ADMIN_PASSWORD=$PW
+          GF_AUTH_GENERIC_OAUTH_ENABLED=true
+          GF_AUTH_GENERIC_OAUTH_NAME=Cognito
+          GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${UserPoolClient}
+          GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${UserPoolClient.ClientSecret}
+          GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email
+          GF_AUTH_GENERIC_OAUTH_AUTH_URL=$COGNITO/oauth2/authorize
+          GF_AUTH_GENERIC_OAUTH_TOKEN_URL=$COGNITO/oauth2/token
+          GF_AUTH_GENERIC_OAUTH_API_URL=$COGNITO/oauth2/userInfo
+          GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP=true
+          EOF
+
+          mkdir -p /etc/grafana/provisioning/datasources /etc/grafana/provisioning/dashboards /var/lib/grafana/dashboards
+          cat >/etc/grafana/provisioning/datasources/cloudwatch.yaml <<'EOF'
+          apiVersion: 1
+          datasources:
+            - name: CloudWatch
+              type: cloudwatch
+              uid: cloudwatch
+              isDefault: true
+              jsonData:
+                authType: default
+                defaultRegion: eu-west-2
+          EOF
+          cat >/etc/grafana/provisioning/dashboards/uk.yaml <<'EOF'
+          apiVersion: 1
+          providers:
+            - name: clearing-advisor
+              type: file
+              disableDeletion: false
+              options:
+                path: /var/lib/grafana/dashboards
+          EOF
+          aws s3 cp s3://${ArtifactsBucket}/grafana/dashboard.json /var/lib/grafana/dashboards/dashboard.json --region ${AWS::Region}
+          chown -R grafana:grafana /var/lib/grafana/dashboards
+
+          systemctl daemon-reload
+          systemctl enable --now grafana-server
+          systemctl enable --now nginx
+          systemctl restart nginx
+
+  EIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt GrafanaEIP.AllocationId
+      InstanceId: !Ref GrafanaInstance
+
+Outputs:
+  GrafanaURL:
+    Value: !Sub 'https://${GrafanaEIP}.nip.io/'
+  ElasticIP:
+    Value: !Ref GrafanaEIP
+  CognitoHostedUI:
+    Value: !Sub 'https://clearing-advisor-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=code&scope=openid+email+profile&redirect_uri=https://${GrafanaEIP}.nip.io/login/generic_oauth'
+  AdminPasswordSecret:
+    Value: !Ref GrafanaAdminSecret
+  UserPoolId:
+    Value: !Ref UserPool

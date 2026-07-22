@@ -1,0 +1,442 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  UK Clearing Advisor - Compute stack. Four Node.js 22 Lambda functions
+  (AWS SDK v3 only), one least-privilege role each, explicit log groups.
+
+Parameters:
+  Environment: { Type: String, Default: production, AllowedValues: [production, staging] }
+  LogLevel: { Type: String, Default: INFO, AllowedValues: [INFO, DEBUG] }
+  ArtifactsBucket: { Type: String, Default: uk-clearing-advisor-artifacts-REPLACE_ACCOUNT_ID }
+  ContactsTable: { Type: String, Default: ClearingAdvisor-UniversityContacts }
+  SubjectDefaultsTable: { Type: String, Default: ClearingAdvisor-SubjectDefaults }
+  CUGTable: { Type: String, Default: ClearingAdvisor-CUGRankings }
+  ScholarshipsTable: { Type: String, Default: ClearingAdvisor-Scholarships }
+  QueryCacheTable: { Type: String, Default: ClearingAdvisor-QueryCache }
+  RateLimitsTable: { Type: String, Default: ClearingAdvisor-RateLimits }
+  ClearingCacheTable: { Type: String, Default: ClearingAdvisor-ClearingCache }
+  ChangeLogTable: { Type: String, Default: ClearingAdvisor-ChangeLog }
+  ExportsBucket: { Type: String, Default: uk-clearing-advisor-exports-REPLACE_ACCOUNT_ID }
+  SearchFunctionName: { Type: String, Default: ClearingAdvisor-SearchCourses }
+
+Mappings: {}
+
+Resources:
+
+  # ---------------- Log groups (explicit retention) ----------------
+  SearchCoursesLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: /aws/lambda/ClearingAdvisor-SearchCourses
+      RetentionInDays: 30
+  GetSubjectsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: /aws/lambda/ClearingAdvisor-GetSubjects
+      RetentionInDays: 14
+  GetUniversitiesLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: /aws/lambda/ClearingAdvisor-GetUniversities
+      RetentionInDays: 14
+  GetScholarshipsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: /aws/lambda/ClearingAdvisor-GetScholarships
+      RetentionInDays: 14
+  GenerateExportLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: /aws/lambda/ClearingAdvisor-GenerateExport
+      RetentionInDays: 30
+  DailyScraperLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: /aws/lambda/ClearingAdvisor-DailyScraper
+      RetentionInDays: 30
+  WarmUpLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: /aws/lambda/ClearingAdvisor-WarmUp
+      RetentionInDays: 14
+
+  # ---------------- IAM roles (least privilege) ----------------
+  SearchCoursesRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: search-data-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['dynamodb:Scan', 'dynamodb:GetItem', 'dynamodb:Query']
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ContactsTable}'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${SubjectDefaultsTable}'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${CUGTable}'
+              - Effect: Allow
+                Action: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query']
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ClearingCacheTable}'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${QueryCacheTable}'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RateLimitsTable}'
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals: { 'cloudwatch:namespace': ClearingAdvisor }
+
+  GetUniversitiesRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: read-contacts
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['dynamodb:Scan']
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ContactsTable}'
+
+  GetScholarshipsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: read-scholarships
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['dynamodb:Query']
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ScholarshipsTable}'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ScholarshipsTable}/index/*'
+
+  GetSubjectsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  GenerateExportRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: export-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['dynamodb:GetItem', 'dynamodb:UpdateItem']
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${QueryCacheTable}'
+              - Effect: Allow
+                Action: ['dynamodb:UpdateItem']
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RateLimitsTable}'
+              - Effect: Allow
+                Action: ['s3:PutObject', 's3:GetObject']
+                Resource: !Sub 'arn:aws:s3:::${ExportsBucket}/exports/*'
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals: { 'cloudwatch:namespace': ClearingAdvisor }
+
+  DailyScraperRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: scraper-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['dynamodb:Scan']
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ContactsTable}'
+              - Effect: Allow
+                Action: ['dynamodb:PutItem']
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ChangeLogTable}'
+              - Effect: Allow
+                Action: ['dynamodb:GetItem', 'dynamodb:PutItem']
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ClearingCacheTable}'
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals: { 'cloudwatch:namespace': ClearingAdvisor }
+
+  WarmUpRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: invoke-search
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['lambda:InvokeFunction']
+                Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${SearchFunctionName}'
+
+  # ---------------- Lambda functions ----------------
+  SearchCoursesFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: SearchCoursesLogGroup
+    Properties:
+      FunctionName: ClearingAdvisor-SearchCourses
+      Runtime: nodejs22.x
+      Handler: index.handler
+      MemorySize: 512
+      Timeout: 10
+      Role: !GetAtt SearchCoursesRole.Arn
+      TracingConfig: { Mode: Active }
+      Code:
+        S3Bucket: !Ref ArtifactsBucket
+        S3Key: lambda/SearchCourses-v4.zip
+      Environment:
+        Variables:
+          CONTACTS_TABLE: !Ref ContactsTable
+          SUBJECT_DEFAULTS_TABLE: !Ref SubjectDefaultsTable
+          CUG_TABLE: !Ref CUGTable
+          CLEARING_CACHE_TABLE: !Ref ClearingCacheTable
+          QUERY_CACHE_TABLE: !Ref QueryCacheTable
+          RATE_LIMITS_TABLE: !Ref RateLimitsTable
+          METRICS_NAMESPACE: ClearingAdvisor
+          ENVIRONMENT: !Ref Environment
+          LOG_LEVEL: !Ref LogLevel
+
+  # Published version + alias so provisioned concurrency can serve API traffic.
+  SearchCoursesVersionV4:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref SearchCoursesFunction
+  SearchCoursesAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      Name: live
+      FunctionName: !Ref SearchCoursesFunction
+      FunctionVersion: !GetAtt SearchCoursesVersionV4.Version
+
+  GetSubjectsFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: GetSubjectsLogGroup
+    Properties:
+      FunctionName: ClearingAdvisor-GetSubjects
+      Runtime: nodejs22.x
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 5
+      Role: !GetAtt GetSubjectsRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactsBucket
+        S3Key: lambda/GetSubjects.zip
+      Environment:
+        Variables: { ENVIRONMENT: !Ref Environment, LOG_LEVEL: !Ref LogLevel }
+
+  GetUniversitiesFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: GetUniversitiesLogGroup
+    Properties:
+      FunctionName: ClearingAdvisor-GetUniversities
+      Runtime: nodejs22.x
+      Handler: index.handler
+      MemorySize: 256
+      Timeout: 10
+      Role: !GetAtt GetUniversitiesRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactsBucket
+        S3Key: lambda/GetUniversities.zip
+      Environment:
+        Variables:
+          CONTACTS_TABLE: !Ref ContactsTable
+          ENVIRONMENT: !Ref Environment
+          LOG_LEVEL: !Ref LogLevel
+
+  GetScholarshipsFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: GetScholarshipsLogGroup
+    Properties:
+      FunctionName: ClearingAdvisor-GetScholarships
+      Runtime: nodejs22.x
+      Handler: index.handler
+      MemorySize: 256
+      Timeout: 10
+      Role: !GetAtt GetScholarshipsRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactsBucket
+        S3Key: lambda/GetScholarships.zip
+      Environment:
+        Variables:
+          SCHOLARSHIPS_TABLE: !Ref ScholarshipsTable
+          ENVIRONMENT: !Ref Environment
+          LOG_LEVEL: !Ref LogLevel
+
+  GenerateExportFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: GenerateExportLogGroup
+    Properties:
+      FunctionName: ClearingAdvisor-GenerateExport
+      Runtime: nodejs22.x
+      Handler: index.handler
+      MemorySize: 1024
+      Timeout: 30
+      Role: !GetAtt GenerateExportRole.Arn
+      TracingConfig: { Mode: Active }
+      Code:
+        S3Bucket: !Ref ArtifactsBucket
+        S3Key: lambda/GenerateExport.zip
+      Environment:
+        Variables:
+          QUERY_CACHE_TABLE: !Ref QueryCacheTable
+          RATE_LIMITS_TABLE: !Ref RateLimitsTable
+          EXPORTS_BUCKET: !Ref ExportsBucket
+          METRICS_NAMESPACE: ClearingAdvisor
+          ENVIRONMENT: !Ref Environment
+          LOG_LEVEL: !Ref LogLevel
+
+  DailyScraperFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: DailyScraperLogGroup
+    Properties:
+      FunctionName: ClearingAdvisor-DailyScraper
+      Runtime: nodejs22.x
+      Handler: index.handler
+      MemorySize: 512
+      Timeout: 300
+      Role: !GetAtt DailyScraperRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactsBucket
+        S3Key: lambda/DailyScraper.zip
+      Environment:
+        Variables:
+          CONTACTS_TABLE: !Ref ContactsTable
+          CHANGELOG_TABLE: !Ref ChangeLogTable
+          CLEARING_CACHE_TABLE: !Ref ClearingCacheTable
+          METRICS_NAMESPACE: ClearingAdvisor
+          ENVIRONMENT: !Ref Environment
+          LOG_LEVEL: !Ref LogLevel
+
+  WarmUpFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: WarmUpLogGroup
+    Properties:
+      FunctionName: ClearingAdvisor-WarmUp
+      Runtime: nodejs22.x
+      Handler: index.handler
+      MemorySize: 256
+      Timeout: 60
+      Role: !GetAtt WarmUpRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactsBucket
+        S3Key: lambda/WarmUp.zip
+      Environment:
+        Variables:
+          SEARCH_FUNCTION_NAME: !Ref SearchFunctionName
+          ENVIRONMENT: !Ref Environment
+          LOG_LEVEL: !Ref LogLevel
+
+  # Daily scraper at 07:00 UTC.
+  DailyScraperSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: ClearingAdvisor-DailyScraper
+      ScheduleExpression: 'cron(0 7 * * ? *)'
+      State: ENABLED
+      Targets:
+        - Id: DailyScraper
+          Arn: !GetAtt DailyScraperFunction.Arn
+  DailyScraperInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DailyScraperFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DailyScraperSchedule.Arn
+
+  # WarmUp on Results Day (13 Aug 2026) at 05:00 UTC = 06:00 BST.
+  WarmUpSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: ClearingAdvisor-WarmUp
+      ScheduleExpression: 'cron(0 5 13 8 ? 2026)'
+      State: ENABLED
+      Targets:
+        - Id: WarmUp
+          Arn: !GetAtt WarmUpFunction.Arn
+  WarmUpInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WarmUpFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt WarmUpSchedule.Arn
+
+Outputs:
+  SearchCoursesArn: { Value: !GetAtt SearchCoursesFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-SearchCoursesArn' } }
+  SearchCoursesAliasArn: { Value: !Ref SearchCoursesAlias, Export: { Name: !Sub '${AWS::StackName}-SearchCoursesAliasArn' } }
+  GenerateExportArn: { Value: !GetAtt GenerateExportFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-GenerateExportArn' } }
+  GetSubjectsArn: { Value: !GetAtt GetSubjectsFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-GetSubjectsArn' } }
+  GetUniversitiesArn: { Value: !GetAtt GetUniversitiesFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-GetUniversitiesArn' } }
+  GetScholarshipsArn: { Value: !GetAtt GetScholarshipsFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-GetScholarshipsArn' } }
+  SearchCoursesName: { Value: !Ref SearchCoursesFunction }

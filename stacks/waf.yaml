@@ -1,0 +1,130 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  UK Clearing Advisor - WAF WebACL for CloudFront. MUST be deployed in
+  us-east-1 (CLOUDFRONT scope). Geo-block non-GB, IP rate limiting and AWS
+  managed rule groups. Bot Control is optional (paid) via a parameter.
+
+Parameters:
+  EnableBotControl:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable AWS WAF Bot Control managed group (paid, ~USD 10/month).
+  RateLimitPer5Min:
+    Type: Number
+    Default: 1000
+    Description: Requests per 5 minutes per IP before WAF blocks (edge P2).
+
+Conditions:
+  BotControlOn: !Equals [!Ref EnableBotControl, 'true']
+
+Resources:
+  WebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: clearing-advisor-webacl
+      Scope: CLOUDFRONT
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: clearing-advisor-webacl
+      Rules:
+        # P1 - block anything not from Great Britain.
+        - Name: GeoBlockNonGB
+          Priority: 1
+          Action:
+            Block:
+              CustomResponse:
+                ResponseCode: 403
+          Statement:
+            NotStatement:
+              Statement:
+                GeoMatchStatement:
+                  CountryCodes: [GB]
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: GeoBlockNonGB
+
+        # P2 - per-IP rate limit.
+        - Name: RateLimitPerIP
+          Priority: 2
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: !Ref RateLimitPer5Min
+              AggregateKeyType: IP
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RateLimitPerIP
+
+        # P4 - Core Rule Set. Starts in COUNT (spec) to avoid false positives.
+        - Name: CommonRuleSet
+          Priority: 4
+          OverrideAction:
+            Count: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: CommonRuleSet
+
+        # P5 - Known bad inputs (block).
+        - Name: KnownBadInputs
+          Priority: 5
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: KnownBadInputs
+
+        # P6 - SQL injection (block).
+        - Name: SQLiRuleSet
+          Priority: 6
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesSQLiRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: SQLiRuleSet
+
+        # P3 - Bot Control (optional, paid).
+        - !If
+          - BotControlOn
+          - Name: BotControl
+            Priority: 3
+            OverrideAction:
+              None: {}
+            Statement:
+              ManagedRuleGroupStatement:
+                VendorName: AWS
+                Name: AWSManagedRulesBotControlRuleSet
+                ManagedRuleGroupConfigs:
+                  - AWSManagedRulesBotControlRuleSet:
+                      InspectionLevel: COMMON
+            VisibilityConfig:
+              SampledRequestsEnabled: true
+              CloudWatchMetricsEnabled: true
+              MetricName: BotControl
+          - !Ref AWS::NoValue
+
+Outputs:
+  WebACLArn:
+    Value: !GetAtt WebACL.Arn
+    Export: { Name: !Sub '${AWS::StackName}-WebACLArn' }
