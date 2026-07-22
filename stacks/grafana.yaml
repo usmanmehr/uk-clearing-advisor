@@ -6,8 +6,8 @@ Description: >
   dashboard. Admin password stored in Secrets Manager.
 
 Parameters:
-  VpcId: { Type: 'AWS::EC2::VPC::Id', Default: REPLACE_VPC_ID }
-  SubnetId: { Type: 'AWS::EC2::Subnet::Id', Default: REPLACE_SUBNET_ID }
+  VpcId: { Type: 'AWS::EC2::VPC::Id', Description: 'VPC for the Grafana instance (provide at deploy time).' }
+  SubnetId: { Type: 'AWS::EC2::Subnet::Id', Description: 'Public subnet for the Grafana instance (provide at deploy time).' }
   InstanceType: { Type: String, Default: t3.small }
   ArtifactsBucket: { Type: String, Default: uk-clearing-advisor-artifacts-REPLACE_ACCOUNT_ID }
   AllowedCidr:

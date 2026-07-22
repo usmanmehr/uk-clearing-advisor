@@ -1,5 +1,7 @@
 # UK Clearing Advisor
 
+[![Validate CloudFormation](https://github.com/usmanmehr/uk-clearing-advisor/actions/workflows/cfn-lint.yml/badge.svg)](https://github.com/usmanmehr/uk-clearing-advisor/actions/workflows/cfn-lint.yml)
+
 A UK-only, fully serverless web app that helps students find undergraduate
 courses in UCAS Clearing, ranked by graduate employability and value for money,
 plus a Grafana analytics stack showing where visitors come from.
@@ -96,6 +98,10 @@ Without a live UCAS feed, results are estimates and status badges are
 university-level (labelled as such). Confirm course-level Clearing availability
 with the university on Results Day. Integrating the UCAS Clearing API is the
 path to authoritative, course-level data.
+
+## Contributing
+See [CONTRIBUTING.md](CONTRIBUTING.md). CI runs `cfn-lint` on every push to the
+templates.
 
 ## License
 MIT - see [LICENSE](LICENSE).
