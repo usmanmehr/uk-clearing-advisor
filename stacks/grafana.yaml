@@ -21,6 +21,22 @@ Parameters:
     Type: String
     Default: pl-93a247fa
     Description: CloudFront origin-facing managed prefix list (eu-west-2) for port 80.
+  FrontDomain:
+    Type: String
+    Default: REPLACE_GRAFANA_CF.cloudfront.net
+    Description: >
+      CloudFront domain of the Grafana front door (output of the grafana-front
+      stack). Grafana root_url and CSRF trusted origin are set to this so that
+      cookie-authenticated queries from the browser pass Grafana's origin check.
+      Deploy grafana first with the placeholder, create grafana-front, then
+      redeploy this stack with the real domain.
+  OriginSecret:
+    Type: String
+    NoEcho: true
+    Default: change-me
+    Description: >
+      Shared secret CloudFront sends as the X-Origin-Verify header. Must match
+      the OriginSecret used in the grafana-front stack.
   LatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
@@ -66,8 +82,10 @@ Resources:
       SupportedIdentityProviders: [COGNITO]
       CallbackURLs:
         - !Sub 'https://${GrafanaEIP}.nip.io/login/generic_oauth'
+        - !Sub 'https://${FrontDomain}/login/generic_oauth'
       LogoutURLs:
         - !Sub 'https://${GrafanaEIP}.nip.io/'
+        - !Sub 'https://${FrontDomain}/'
 
   InstanceRole:
     Type: AWS::IAM::Role
@@ -183,8 +201,44 @@ Resources:
           }
           EOF
 
+          # Minimal nginx.conf so only our server blocks exist (drops the
+          # stock :80 default server that would clash with the origin listener).
+          cat >/etc/nginx/nginx.conf <<'EOF'
+          user nginx;
+          worker_processes auto;
+          error_log /var/log/nginx/error.log;
+          pid /run/nginx.pid;
+          events { worker_connections 1024; }
+          http {
+              include /etc/nginx/mime.types;
+              default_type application/octet-stream;
+              sendfile on;
+              keepalive_timeout 65;
+              include /etc/nginx/conf.d/*.conf;
+          }
+          EOF
+
+          # HTTP origin listener for the CloudFront front door. Secret-gated on
+          # the X-Origin-Verify header, and forwards the public CloudFront host
+          # so Grafana's origin/CSRF check matches the browser Origin.
+          cat >/etc/nginx/conf.d/grafana-origin.conf <<EOF
+          server {
+            listen 80;
+            server_name _;
+            if (\$http_x_origin_verify != "${OriginSecret}") { return 403; }
+            location / {
+              proxy_pass http://127.0.0.1:3000;
+              proxy_set_header Host ${FrontDomain};
+              proxy_set_header X-Forwarded-Host ${FrontDomain};
+              proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto https;
+            }
+          }
+          EOF
+
           cat >>/etc/sysconfig/grafana-server <<EOF
-          GF_SERVER_ROOT_URL=https://$HOST/
+          GF_SERVER_ROOT_URL=https://${FrontDomain}/
+          GF_SECURITY_CSRF_TRUSTED_ORIGINS=${FrontDomain}
           GF_SECURITY_ADMIN_PASSWORD=$PW
           GF_AUTH_GENERIC_OAUTH_ENABLED=true
           GF_AUTH_GENERIC_OAUTH_NAME=Cognito
