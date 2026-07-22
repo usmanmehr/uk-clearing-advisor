@@ -22,6 +22,36 @@ DynamoDB, EventBridge, CloudWatch, Cognito, EC2 for Grafana).
 - PDF/XLSX export, daily change scraper, and Results-Day autoscaling.
 - Grafana dashboard (UK visitor map, region/city/device breakdown, security).
 
+## Quickstart - deploy your own
+You deploy into your **own** AWS account; all account-specific values are
+placeholders you supply.
+
+```bash
+REGION=eu-west-2
+ACCT=$(aws sts get-caller-identity --query Account --output text)
+ART=uk-clearing-advisor-artifacts-$ACCT
+
+# 1. Artifacts bucket + Lambda zips
+aws s3 mb s3://$ART --region $REGION
+python3 scripts/build_lambdas.py
+for f in build/*.zip; do aws s3 cp "$f" s3://$ART/lambda/ --region $REGION; done
+
+# 2. Data + seed, then compute + API
+aws cloudformation deploy --template-file stacks/data.yaml \
+  --stack-name uk-clearing-advisor-data --region $REGION
+python3 scripts/seed.py
+aws cloudformation deploy --template-file stacks/compute.yaml \
+  --stack-name uk-clearing-advisor-compute --region $REGION \
+  --capabilities CAPABILITY_IAM --parameter-overrides ArtifactsBucket=$ART
+aws cloudformation deploy --template-file stacks/api.yaml \
+  --stack-name uk-clearing-advisor-api --region $REGION
+```
+
+That gets the API working. Add the edge, UI and extras (WAF, CDN, frontend,
+observability, scaling, Grafana) using the full sequence in "Deploy" below.
+Minimum you must supply: unique bucket names, `AdminEmail`, and (for Grafana)
+`VpcId` / `SubnetId` / `AllowedCidr`.
+
 ## Repository layout
 ```
 stacks/        CloudFormation templates (data, compute, api, cdn, waf,
@@ -102,6 +132,18 @@ path to authoritative, course-level data.
 ## Contributing
 See [CONTRIBUTING.md](CONTRIBUTING.md). CI runs `cfn-lint` on every push to the
 templates.
+
+## Branch protection (recommended)
+Protect `main` so changes go through review and CI. On GitHub:
+**Settings -> Branches -> Add branch ruleset** (or "Add rule") targeting `main`:
+- Require a pull request before merging (at least 1 approval).
+- Require status checks to pass -> select **Validate CloudFormation** (cfn-lint),
+  and "Require branches to be up to date before merging".
+- Block force pushes and branch deletion.
+- Optional: require linear history and signed commits.
+
+This keeps the linted, reviewed state on `main` and prevents accidental direct
+pushes or force-pushes.
 
 ## License
 MIT - see [LICENSE](LICENSE).
