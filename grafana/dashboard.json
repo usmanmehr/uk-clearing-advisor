@@ -1,73 +1,163 @@
 {
-  "annotations": { "list": [ { "builtIn": 1, "type": "dashboard", "enable": true, "hide": true, "name": "Annotations & Alerts" } ] },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "type": "dashboard",
+        "enable": true,
+        "hide": true,
+        "name": "Annotations & Alerts"
+      }
+    ]
+  },
   "editable": true,
   "schemaVersion": 39,
   "title": "UK Clearing Advisor - Access & Geography",
-  "tags": ["clearing-advisor"],
-  "time": { "from": "now-7d", "to": "now" },
-  "templating": { "list": [] },
+  "tags": [
+    "clearing-advisor"
+  ],
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
   "panels": [
     {
       "id": 1,
       "title": "UK visitor map (searches by location)",
       "type": "geomap",
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 0 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
       "targets": [
         {
           "refId": "A",
           "queryMode": "Logs",
           "region": "eu-west-2",
-          "logGroupNames": ["/aws/lambda/ClearingAdvisor-SearchCourses"],
-          "expression": "fields @timestamp, geoLat, geoLon, geoCity, geoRegion | filter ispresent(geoLat) | stats count(*) as requests by geoLat, geoLon, geoCity, geoRegion | sort requests desc"
+          "logGroupNames": [
+            "/aws/lambda/ClearingAdvisor-SearchCourses"
+          ],
+          "expression": "fields @timestamp, geoLat, geoLon, geoCity, geoRegion | filter ispresent(geoLat) | stats count(*) as requests by geoLat, geoLon, geoCity, geoRegion | sort requests desc",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
         }
       ],
       "options": {
-        "view": { "id": "coords", "lat": 54.5, "lon": -3.5, "zoom": 5 },
-        "basemap": { "type": "default", "name": "Basemap" },
+        "view": {
+          "id": "coords",
+          "lat": 54.5,
+          "lon": -3.5,
+          "zoom": 5
+        },
+        "basemap": {
+          "type": "default",
+          "name": "Basemap"
+        },
         "layers": [
           {
             "type": "markers",
             "name": "Searches",
-            "location": { "mode": "coords", "latitude": "geoLat", "longitude": "geoLon" },
+            "location": {
+              "mode": "coords",
+              "latitude": "geoLat",
+              "longitude": "geoLon"
+            },
             "config": {
               "style": {
-                "size": { "field": "requests", "min": 4, "max": 30 },
-                "color": { "field": "requests" },
+                "size": {
+                  "field": "requests",
+                  "min": 4,
+                  "max": 30
+                },
+                "color": {
+                  "field": "requests"
+                },
                 "opacity": 0.7
               }
             }
           }
         ],
-        "tooltip": { "mode": "details" }
+        "tooltip": {
+          "mode": "details"
+        }
       }
     },
     {
       "id": 2,
       "title": "Requests by UK region",
       "type": "barchart",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
       "targets": [
         {
-          "refId": "A", "queryMode": "Logs", "region": "eu-west-2",
-          "logGroupNames": ["/aws/lambda/ClearingAdvisor-SearchCourses"],
-          "expression": "fields geoRegion | filter ispresent(geoRegion) | stats count(*) as requests by geoRegion | sort requests desc | limit 15"
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "eu-west-2",
+          "logGroupNames": [
+            "/aws/lambda/ClearingAdvisor-SearchCourses"
+          ],
+          "expression": "fields geoRegion | filter ispresent(geoRegion) | stats count(*) as requests by geoRegion | sort requests desc | limit 15",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
         }
       ],
-      "fieldConfig": { "defaults": { "color": { "mode": "continuous-BlPu" } }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-BlPu"
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 3,
       "title": "Top cities",
       "type": "table",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
       "targets": [
         {
-          "refId": "A", "queryMode": "Logs", "region": "eu-west-2",
-          "logGroupNames": ["/aws/lambda/ClearingAdvisor-SearchCourses"],
-          "expression": "fields geoCity, geoRegion | filter ispresent(geoCity) | stats count(*) as requests by geoCity, geoRegion | sort requests desc | limit 20"
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "eu-west-2",
+          "logGroupNames": [
+            "/aws/lambda/ClearingAdvisor-SearchCourses"
+          ],
+          "expression": "fields geoCity, geoRegion | filter ispresent(geoCity) | stats count(*) as requests by geoCity, geoRegion | sort requests desc | limit 20",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
         }
       ]
     },
@@ -75,14 +165,33 @@
       "id": 4,
       "title": "Searches over time",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
       "targets": [
         {
-          "refId": "A", "queryMode": "Metrics", "region": "eu-west-2",
-          "namespace": "ClearingAdvisor", "metricName": "SearchCount",
-          "statistic": "Sum", "period": "60", "matchExact": true,
-          "dimensions": {}, "metricQueryType": 0, "metricEditorMode": 0
+          "refId": "A",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "ClearingAdvisor",
+          "metricName": "SearchCount",
+          "statistic": "Sum",
+          "period": "60",
+          "matchExact": true,
+          "dimensions": {},
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
         }
       ]
     },
@@ -90,40 +199,128 @@
       "id": 5,
       "title": "Geo-blocked requests (non-UK) - WAF",
       "type": "stat",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 28 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 28
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
       "targets": [
         {
-          "refId": "A", "queryMode": "Metrics", "region": "us-east-1",
-          "namespace": "AWS/WAFV2", "metricName": "BlockedRequests",
-          "statistic": "Sum", "period": "300",
-          "dimensions": { "WebACL": "clearing-advisor-webacl", "Rule": "GeoBlockNonGB", "Region": "CloudFront" }
+          "refId": "A",
+          "queryMode": "Metrics",
+          "region": "us-east-1",
+          "namespace": "AWS/WAFV2",
+          "metricName": "BlockedRequests",
+          "statistic": "Sum",
+          "period": "300",
+          "dimensions": {
+            "WebACL": "clearing-advisor-webacl",
+            "Rule": "GeoBlockNonGB",
+            "Region": "CloudFront"
+          },
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
         }
       ],
-      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "unit": "short" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      }
     },
     {
       "id": 6,
       "title": "Security blocks over time (WAF rules)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 28 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 28
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
       "targets": [
-        { "refId": "A", "queryMode": "Metrics", "region": "us-east-1", "namespace": "AWS/WAFV2", "metricName": "BlockedRequests", "statistic": "Sum", "period": "300", "label": "Rate limited", "dimensions": { "WebACL": "clearing-advisor-webacl", "Rule": "RateLimitPerIP", "Region": "CloudFront" } },
-        { "refId": "B", "queryMode": "Metrics", "region": "us-east-1", "namespace": "AWS/WAFV2", "metricName": "BlockedRequests", "statistic": "Sum", "period": "300", "label": "Bad inputs", "dimensions": { "WebACL": "clearing-advisor-webacl", "Rule": "KnownBadInputs", "Region": "CloudFront" } }
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "region": "us-east-1",
+          "namespace": "AWS/WAFV2",
+          "metricName": "BlockedRequests",
+          "statistic": "Sum",
+          "period": "300",
+          "label": "Rate limited",
+          "dimensions": {
+            "WebACL": "clearing-advisor-webacl",
+            "Rule": "RateLimitPerIP",
+            "Region": "CloudFront"
+          },
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        },
+        {
+          "refId": "B",
+          "queryMode": "Metrics",
+          "region": "us-east-1",
+          "namespace": "AWS/WAFV2",
+          "metricName": "BlockedRequests",
+          "statistic": "Sum",
+          "period": "300",
+          "label": "Bad inputs",
+          "dimensions": {
+            "WebACL": "clearing-advisor-webacl",
+            "Rule": "KnownBadInputs",
+            "Region": "CloudFront"
+          },
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        }
       ]
     },
     {
       "id": 7,
       "title": "Usage by hour (searches)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
       "targets": [
         {
-          "refId": "A", "queryMode": "Logs", "region": "eu-west-2",
-          "logGroupNames": ["/aws/lambda/ClearingAdvisor-SearchCourses"],
-          "expression": "filter msg = 'search' | stats count(*) as searches by bin(1h)"
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "eu-west-2",
+          "logGroupNames": [
+            "/aws/lambda/ClearingAdvisor-SearchCourses"
+          ],
+          "expression": "filter msg = 'search' | stats count(*) as searches by bin(1h)",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
         }
       ]
     },
@@ -131,15 +328,32 @@
       "id": 8,
       "title": "Device breakdown",
       "type": "piechart",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 36
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
       "targets": [
         {
-          "refId": "A", "queryMode": "Logs", "region": "eu-west-2",
-          "logGroupNames": ["/aws/lambda/ClearingAdvisor-SearchCourses"],
-          "expression": "filter ispresent(device) | stats count(*) as requests by device"
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "eu-west-2",
+          "logGroupNames": [
+            "/aws/lambda/ClearingAdvisor-SearchCourses"
+          ],
+          "expression": "filter ispresent(device) | stats count(*) as requests by device",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
         }
       ]
     }
-  ]
+  ],
+  "refresh": "1m"
 }
