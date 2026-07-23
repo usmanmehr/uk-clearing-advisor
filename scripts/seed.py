@@ -155,6 +155,13 @@ def contact_item(row):
         "clearingStatus": s(d["clearingStatus"]),
         "accommodationGuarantee": {"BOOL": bool(d["accommodationGuarantee"])},
         "lastUpdated": s(NOW),
+        # A full re-seed (PutItem replaces the whole item) is the only thing
+        # that counts as a human-verified refresh of clearingStatus, so it
+        # deliberately clears any possibleStatusChange/lastAutomatedCheck
+        # flags DailyScraper had set (they simply aren't included here) -
+        # a fresh lastVerified means "checked and confirmed accurate as of
+        # this timestamp" until the scraper flags drift again.
+        "lastVerified": s(NOW),
     }
     if d["highFliersRank"] is not None:
         item["highFliersRank"] = {"N": str(d["highFliersRank"])}

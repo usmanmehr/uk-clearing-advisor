@@ -75,6 +75,12 @@ Resources:
     Properties:
       LogGroupName: /aws/lambda/ClearingAdvisor-WarmUp
       RetentionInDays: 14
+  HealthLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: /aws/lambda/ClearingAdvisor-Health
+      RetentionInDays: 7
 
   # ---------------- IAM roles (least privilege) ----------------
   SearchCoursesRole:
@@ -215,7 +221,7 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: ['dynamodb:Scan']
+                Action: ['dynamodb:Scan', 'dynamodb:UpdateItem']
                 Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ContactsTable}'
               - Effect: Allow
                 Action: ['dynamodb:PutItem']
@@ -249,6 +255,26 @@ Resources:
                 Action: ['lambda:InvokeFunction']
                 Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${SearchFunctionName}'
 
+  HealthRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: health-check-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['dynamodb:GetItem']
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ContactsTable}'
+
   # ---------------- Lambda functions ----------------
   SearchCoursesFunction:
     Type: AWS::Lambda::Function
@@ -263,7 +289,7 @@ Resources:
       TracingConfig: { Mode: Active }
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/SearchCourses-v14.zip
+        S3Key: lambda/SearchCourses-v16.zip
       Environment:
         Variables:
           CONTACTS_TABLE: !Ref ContactsTable
@@ -388,7 +414,7 @@ Resources:
       Role: !GetAtt DailyScraperRole.Arn
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/DailyScraper.zip
+        S3Key: lambda/DailyScraper-v2.zip
       Environment:
         Variables:
           CONTACTS_TABLE: !Ref ContactsTable
@@ -416,6 +442,23 @@ Resources:
           SEARCH_FUNCTION_NAME: !Ref SearchFunctionName
           ENVIRONMENT: !Ref Environment
           LOG_LEVEL: !Ref LogLevel
+
+  HealthFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: HealthLogGroup
+    Properties:
+      FunctionName: ClearingAdvisor-Health
+      Runtime: nodejs22.x
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 5
+      Role: !GetAtt HealthRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactsBucket
+        S3Key: lambda/Health-v1.zip
+      Environment:
+        Variables:
+          CONTACTS_TABLE: !Ref ContactsTable
 
   # Daily scraper at 07:00 UTC.
   DailyScraperSchedule:
@@ -460,4 +503,5 @@ Outputs:
   GetSubjectsArn: { Value: !GetAtt GetSubjectsFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-GetSubjectsArn' } }
   GetUniversitiesArn: { Value: !GetAtt GetUniversitiesFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-GetUniversitiesArn' } }
   GetScholarshipsArn: { Value: !GetAtt GetScholarshipsFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-GetScholarshipsArn' } }
+  HealthArn: { Value: !GetAtt HealthFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-HealthArn' } }
   SearchCoursesName: { Value: !Ref SearchCoursesFunction }

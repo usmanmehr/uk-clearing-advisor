@@ -97,15 +97,22 @@ export const REQUIRED_SUBJECTS = {
   'Chemistry': ['Chemistry'],
 };
 
-export const GRADE_VALUES = { 'A*': 12, A: 11, B: 10, C: 9, D: 8, E: 7 };
+// Real UCAS Tariff points for A-level, verified directly against Pearson's
+// official BTEC/A-level tariff table (qualifications.pearson.com, BTEC and
+// A Level UCAS points, 2025/26 AAQs) and cross-checked against two
+// independent sources (studentbeans.com, ukcalculator.com) - all three
+// agree exactly. Replaces the previous arbitrary internal 7-12 scale with
+// the real published Tariff points.
+export const GRADE_VALUES = { 'A*': 56, A: 48, B: 40, C: 32, D: 24, E: 16 };
 
 // Sum of the best three A-level grades, normalised to a 3-subject-equivalent
 // score. Offer thresholds (see indicativeGrade/offerBand in SearchCourses)
-// are calibrated against three A-levels (BBB, AAB, etc). The form allows
-// submitting with as few as 2 A-levels (a real, common case), but a plain
-// sum of only 2 grades can never reach a 3-subject threshold - even two A*s
-// (24) falls short of the lowest offer band (BBB = 30). That meant every
-// 2-subject search silently returned zero results regardless of grades.
+// are calibrated against three A-levels (e.g. BBB = 120 points). The form
+// allows submitting with as few as 2 A-levels (a real, common case), but a
+// plain sum of only 2 grades can never reach a 3-subject threshold - even
+// two A*s (112) falls short of the lowest offer band (BBB = 120). That
+// meant every 2-subject search silently returned zero results regardless
+// of grades.
 // FIX: average the best up to 3 grades, then scale to a 3-subject total, so
 // 2 subjects are compared fairly against 3-subject offer bands rather than
 // being mathematically incapable of qualifying for anything. For 3 or more

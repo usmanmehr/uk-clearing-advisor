@@ -83,6 +83,15 @@ Resources:
       IntegrationUri:
         Fn::ImportValue: !Sub '${ComputeStackName}-GenerateExportArn'
 
+  HealthIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      PayloadFormatVersion: '2.0'
+      IntegrationUri:
+        Fn::ImportValue: !Sub '${ComputeStackName}-HealthArn'
+
   # ---- Routes ----
   SearchRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -119,7 +128,7 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       RouteKey: 'GET /health'
-      Target: !Sub 'integrations/${SubjectsIntegration}'
+      Target: !Sub 'integrations/${HealthIntegration}'
 
   # ---- Stage ($default, auto-deploy) ----
   DefaultStage:
@@ -174,6 +183,14 @@ Resources:
     Properties:
       FunctionName:
         Fn::ImportValue: !Sub '${ComputeStackName}-GenerateExportArn'
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*'
+  HealthPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::ImportValue: !Sub '${ComputeStackName}-HealthArn'
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*'

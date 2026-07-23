@@ -182,3 +182,13 @@ button.remove:hover { background: var(--red-bg); }
 .salary-banner b { color: var(--navy); }
 .salary-banner a { color: var(--navy-2); font-weight: 600; }
 .honeypot { display: none; position: absolute; left: -9999px; }
+
+.did-you-mean { font-size: .85rem; color: var(--muted); margin: .35rem 0 0; }
+.link-btn {
+  background: none; border: none; padding: 0; margin: 0; color: var(--navy-2);
+  font-weight: 700; font-size: .85rem; text-decoration: underline; cursor: pointer;
+}
+.link-btn:hover { color: var(--navy); }
+
+.tip-list { margin: .5rem 0 0; padding-left: 1.3rem; color: var(--ink); }
+.tip-list li { margin-bottom: .35rem; }

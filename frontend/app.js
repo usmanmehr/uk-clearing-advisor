@@ -5,13 +5,32 @@
 const API = '/api';
 const GRADES = ['A*', 'A', 'B', 'C', 'D', 'E'];
 const MAX_ALEVELS = 4;
+const SEARCH_TIMEOUT_MS = 12000;
 
 let lastResults = [];
 let shown = 0;
+let subjectNames = []; // full subject list, loaded once, used for "did you mean"
 const PAGE = 10;
 
 const el = (id) => document.getElementById(id);
 const fmtGBP = (n) => '£' + Number(n).toLocaleString('en-GB');
+
+// Small Levenshtein distance for client-side "did you mean" suggestions.
+// (A separate, tiny implementation - not shared with the backend's - since
+// there is no build step to share modules between frontend and Lambda.)
+function levenshtein(a, b) {
+  a = a.toLowerCase(); b = b.toLowerCase();
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[m][n];
+}
 
 // ---- A-level rows ----
 function addAlevelRow(subject = '', grade = 'A') {
@@ -38,6 +57,10 @@ function addAlevelRow(subject = '', grade = 'A') {
   validateForm();
 }
 
+function clearAlevelRows() {
+  el('alevels').innerHTML = '';
+}
+
 function collectAlevels() {
   return Array.from(document.querySelectorAll('.alevel-row')).map((r) => ({
     subject: r.querySelector('.al-subject').value.trim(),
@@ -49,7 +72,7 @@ function validateForm() {
   el('submit-btn').disabled = collectAlevels().length < 2;
 }
 
-// ---- Subject autocomplete (debounced) ----
+// ---- Subject autocomplete (debounced) + "did you mean" ----
 let debounce;
 async function loadSubjects(q) {
   try {
@@ -58,7 +81,31 @@ async function loadSubjects(q) {
     const data = await res.json();
     const list = el('subject-list');
     list.innerHTML = (data.subjects || []).map((s) => `<option value="${s}">`).join('');
+    if (!q) subjectNames = data.subjects || []; // cache the full list from the initial empty-query load
   } catch { /* non-fatal */ }
+}
+
+// Shown while the user is typing, before they submit - lets a mistyped
+// subject ("Buisness", "Comp Sci") get corrected early rather than silently
+// resolving server-side or matching nothing.
+function renderDidYouMean(query) {
+  const box = el('did-you-mean');
+  if (!query || query.length < 3 || !subjectNames.length) { box.hidden = true; return; }
+  const qLower = query.toLowerCase();
+  const exact = subjectNames.some((s) => s.toLowerCase() === qLower || s.toLowerCase().includes(qLower));
+  if (exact) { box.hidden = true; return; }
+  let best = null, bestD = 3;
+  for (const name of subjectNames) {
+    const d = levenshtein(qLower, name.toLowerCase());
+    if (d < bestD) { bestD = d; best = name; }
+  }
+  if (!best) { box.hidden = true; return; }
+  box.innerHTML = `Did you mean <button type="button" class="link-btn" id="dym-btn">${best}</button>?`;
+  box.hidden = false;
+  el('dym-btn').addEventListener('click', () => {
+    el('course-interest').value = best;
+    box.hidden = true;
+  });
 }
 
 // ---- Rendering ----
@@ -70,6 +117,13 @@ function courseCard(c) {
     ? `<a href="https://${c.clearingPage.replace(/^https?:\/\//, '')}" target="_blank" rel="noopener">Clearing page</a>` : '';
   const warn = c.subjectWarning ? `<div class="warn">${c.subjectWarning}</div>` : '';
   const est = c.estimatedData ? ' <span class="badge Amber">Indicative offer</span>' : '';
+  // Set by the daily automated check when this university's clearing page
+  // may have changed since it was last confirmed - advisory, not definitive
+  // (see statusNote for the full caveat). Shown as its own line so it's not
+  // missed alongside the other status badges.
+  const driftWarn = c.possibleStatusChange
+    ? '<div class="warn">Automated check flagged a possible change to this page - status above may be out of date. Confirm directly.</div>'
+    : '';
 
   // Only show figures that are verified. Graduate prospects are per-university
   // (CUG 2027) where published and DO vary by university, so they stay on
@@ -97,6 +151,7 @@ function courseCard(c) {
     </div>
     ${sourceLine}
     ${warn}
+    ${driftWarn}
     ${c.statusNote ? `<div class="note-line">${c.statusNote}</div>` : ''}
     <div class="contact">Clearing: ${phone} ${page ? '&middot; ' + page : ''}
       ${c.hotlineOpens ? `<br>Hotline: ${c.hotlineOpens}` : ''}</div>
@@ -136,6 +191,63 @@ function showSkeletons() {
   el('show-more').hidden = true;
 }
 
+// Actionable next steps when a search returns nothing, based on which
+// filters are actually active - rather than a generic dead-end message.
+function renderZeroResultsGuidance(payload) {
+  const tips = [];
+  if (payload.courseInterest) {
+    tips.push(`Clear "${payload.courseInterest}" from what you want to study, to see every course you qualify for.`);
+  }
+  if (payload.russellGroupOnly) {
+    tips.push('Untick "Russell Group only" - most universities in Clearing are outside the Russell Group.');
+  }
+  if (payload.location && payload.location !== 'any') {
+    tips.push('Change location to "Anywhere in the UK".');
+  }
+  tips.push('Double-check your grades are entered correctly - a lower grade than intended will rule out more courses.');
+  tips.push('If your grades are genuinely below what Clearing universities are asking for this year, call a university\'s clearing hotline directly - some accept applications below their published typical offer.');
+
+  el('results-summary').innerHTML =
+    'No matching courses found with these settings. Try:'
+    + '<ul class="tip-list">' + tips.map((t) => `<li>${t}</li>`).join('') + '</ul>';
+  el('show-more').hidden = true;
+}
+
+// ---- Shareable URL ----
+// Encodes the current search into the address bar as query params (not
+// pushState - replaceState only, so the back button isn't spammed) so a
+// student can copy the link and send it to themselves or a parent, or
+// reopen it later without retyping everything. Deliberately does NOT
+// auto-run the search on page load - a URL with query params should
+// pre-fill the form, not silently spend the visitor's rate-limit budget
+// the moment the page opens.
+function updateShareUrl(payload) {
+  const params = new URLSearchParams();
+  for (const s of payload.subjects) params.append('a', `${s.subject}:${s.grade}`);
+  if (payload.courseInterest) params.set('ci', payload.courseInterest);
+  if (payload.priority && payload.priority !== 'balanced') params.set('priority', payload.priority);
+  if (payload.location && payload.location !== 'any') params.set('location', payload.location);
+  if (payload.russellGroupOnly) params.set('rg', '1');
+  const url = `${location.pathname}?${params.toString()}`;
+  history.replaceState(null, '', params.toString() ? url : location.pathname);
+}
+
+function prefillFromUrl() {
+  const params = new URLSearchParams(location.search);
+  const subjectPairs = params.getAll('a');
+  if (!subjectPairs.length) return false;
+  clearAlevelRows();
+  for (const pair of subjectPairs.slice(0, MAX_ALEVELS)) {
+    const [subject, grade] = pair.split(':');
+    if (subject) addAlevelRow(decodeURIComponent(subject), GRADES.includes(grade) ? grade : 'A');
+  }
+  if (params.get('ci')) el('course-interest').value = params.get('ci');
+  if (params.get('priority')) el('priority').value = params.get('priority');
+  if (params.get('location')) el('location').value = params.get('location');
+  if (params.get('rg') === '1') el('russellGroupOnly').checked = true;
+  return true;
+}
+
 // ---- Submit ----
 async function onSubmit(e) {
   e.preventDefault();
@@ -153,11 +265,23 @@ async function onSubmit(e) {
     limit: 50,
   };
 
+  // Lock the form while the request is in flight - prevents a double-tap
+  // on a slow connection from firing two searches and burning the rate
+  // limit for nothing, and gives clear feedback that something is happening.
+  const submitBtn = el('submit-btn');
+  const originalLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Searching...';
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
+
   const started = performance.now();
   try {
     const res = await fetch(`${API}/search`, {
       method: 'POST',
       cache: 'no-store',
+      signal: controller.signal,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
@@ -168,14 +292,14 @@ async function onSubmit(e) {
       el('results-summary').innerHTML = `<span class="error">${data.message || 'Something went wrong.'}</span>`;
       return;
     }
+    updateShareUrl(payload);
     lastResults = data.results || [];
     shown = 0;
     el('results').innerHTML = '';
     renderSalaryBanner(data.salaryContext);
     const secs = ((performance.now() - started) / 1000).toFixed(1);
     if (!lastResults.length) {
-      el('results-summary').textContent = 'No matching courses found. Try widening your filters.';
-      el('show-more').hidden = true;
+      renderZeroResultsGuidance(payload);
       return;
     }
     const freshness = data.dataFreshness ? new Date(data.dataFreshness).toLocaleString('en-GB') : '';
@@ -185,20 +309,35 @@ async function onSubmit(e) {
   } catch (err) {
     el('results').innerHTML = '';
     el('salary-banner').hidden = true;
-    el('results-summary').innerHTML = '<span class="error">Could not reach the service. Please try again.</span>';
+    if (err.name === 'AbortError') {
+      el('results-summary').innerHTML = '<span class="error">This is taking longer than usual. Please try again in a moment.</span>';
+    } else {
+      el('results-summary').innerHTML = '<span class="error">Could not reach the service. Please try again.</span>';
+    }
+  } finally {
+    clearTimeout(timeoutId);
+    submitBtn.textContent = originalLabel;
+    validateForm(); // restores disabled state based on current field values, not just re-enabling blindly
   }
 }
 
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', () => {
-  addAlevelRow();
-  addAlevelRow();
+  const prefilled = prefillFromUrl();
+  if (!prefilled) {
+    addAlevelRow();
+    addAlevelRow();
+  }
   loadSubjects('');
   el('add-alevel').addEventListener('click', () => addAlevelRow());
   el('course-interest').addEventListener('input', (e) => {
     clearTimeout(debounce);
     const q = e.target.value.trim();
-    if (q.length >= 2) debounce = setTimeout(() => loadSubjects(q), 300);
+    if (q.length >= 2) {
+      debounce = setTimeout(() => { loadSubjects(q); renderDidYouMean(q); }, 300);
+    } else {
+      el('did-you-mean').hidden = true;
+    }
   });
   el('search-form').addEventListener('submit', onSubmit);
   el('show-more').addEventListener('click', renderMore);

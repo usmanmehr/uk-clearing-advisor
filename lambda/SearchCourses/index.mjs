@@ -55,22 +55,26 @@ async function loadReferenceData() {
   for (const d of defaults.Items || []) SUBJECT_DEFAULTS_CACHE[d.subjectGroup] = d;
 }
 
-// Indicative clearing entry threshold (numeric, best-3 grade points).
+// Indicative clearing entry threshold, in real UCAS Tariff points (see
+// GRADE_VALUES in shared.mjs: A*=56, A=48, B=40, C=32, D=24, E=16 per
+// subject). Previously used an arbitrary internal 30-34 scale; recalibrated
+// to match gradeTotal()'s real points so thresholds and scores are on the
+// same, verified scale.
 // DECISION: with no live UCAS grades, derive an indicative threshold from
 // institution tier so filtering works. Always flagged as estimated.
 function indicativeGrade(u) {
-  if (u.ibTier === 'Tier 1' || (u.highFliersRank && u.highFliersRank <= 5)) return 34; // ~A*AA
-  if (u.russellGroup) return 32; // ~AAB
-  if (u.ibTier === 'Semi-target' || (u.highFliersRank && u.highFliersRank <= 20)) return 31; // ~ABB
-  return 30; // ~BBB
+  if (u.ibTier === 'Tier 1' || (u.highFliersRank && u.highFliersRank <= 5)) return 152; // ~A*AA
+  if (u.russellGroup) return 136; // ~AAB
+  if (u.ibTier === 'Semi-target' || (u.highFliersRank && u.highFliersRank <= 20)) return 128; // ~ABB
+  return 120; // ~BBB
 }
 
 function offerBand(numeric) {
-  if (numeric >= 34) return 'A*AA (indicative)';
-  if (numeric >= 33) return 'AAA (indicative)';
-  if (numeric >= 32) return 'AAB (indicative)';
-  if (numeric >= 31) return 'ABB (indicative)';
-  if (numeric >= 30) return 'BBB (indicative)';
+  if (numeric >= 152) return 'A*AA (indicative)';
+  if (numeric >= 144) return 'AAA (indicative)';
+  if (numeric >= 136) return 'AAB (indicative)';
+  if (numeric >= 128) return 'ABB (indicative)';
+  if (numeric >= 120) return 'BBB (indicative)';
   return 'BBC (indicative)';
 }
 
@@ -278,7 +282,18 @@ export const handler = async (event) => {
         hotlineOpens: u.hotlineOpens || null,
         estimatedData: true,
         courseLevelConfirmed: false,
-        statusNote: 'Status shown is for the university overall, not this specific course. Confirm this course is in Clearing with the university.',
+        statusNote: u.possibleStatusChange
+          ? 'Status shown is for the university overall, not this specific course. Our automated check has flagged a possible change to this page since it was last verified - please confirm directly with the university.'
+          : 'Status shown is for the university overall, not this specific course. Confirm this course is in Clearing with the university.',
+        // Data currency: lastVerified is the last human-confirmed re-seed;
+        // lastAutomatedCheck is the last time the daily scraper checked this
+        // university's clearing page; possibleStatusChange is set by the
+        // scraper (never cleared by it) when it detects the page may have
+        // changed since the last check - see DailyScraper for why this is
+        // advisory only, not an authoritative status override.
+        lastVerified: u.lastVerified || null,
+        lastAutomatedCheck: u.lastAutomatedCheck || null,
+        possibleStatusChange: !!u.possibleStatusChange,
         subjectWarning,
         notes: u.notes || null,
       });

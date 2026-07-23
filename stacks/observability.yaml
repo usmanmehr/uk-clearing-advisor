@@ -153,6 +153,28 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlertsTopic]
 
+  SearchDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ClearingAdvisor-SearchDurationP99
+      AlarmDescription: >-
+        WARNING: SearchCourses p99 execution duration is elevated - a real
+        speed regression (e.g. DynamoDB scan slowing down as the dataset
+        grows) would show here before it shows up as a count of individual
+        slow requests. Complements SlowSearchAlarm (which counts requests
+        over 2s) by watching the raw AWS/Lambda Duration metric directly.
+      Namespace: AWS/Lambda
+      MetricName: Duration
+      Dimensions: [{ Name: FunctionName, Value: !Ref SearchFunctionName }]
+      ExtendedStatistic: p99
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertsTopic]
+      OKActions: [!Ref AlertsTopic]
+
   ResultsDayConcurrencyAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -249,7 +271,8 @@ Resources:
               "properties": { "title": "Active alarms",
                 "alarms": [
                   "${LambdaErrorsAlarm.Arn}", "${LambdaThrottlesAlarm.Arn}",
-                  "${SlowSearchAlarm.Arn}", "${RateLimitSurgeAlarm.Arn}",
+                  "${SlowSearchAlarm.Arn}", "${SearchDurationAlarm.Arn}",
+                  "${RateLimitSurgeAlarm.Arn}",
                   "${HoneypotSpikeAlarm.Arn}", "${ZeroResultsSpikeAlarm.Arn}",
                   "${ResultsDayConcurrencyAlarm.Arn}"
                 ] } }

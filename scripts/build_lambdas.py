@@ -10,6 +10,10 @@ SHARED = os.path.join(LAMBDA_DIR, "shared", "shared.mjs")
 OUT = os.path.join(ROOT, "build")
 FUNCTIONS = ["SearchCourses", "GetSubjects", "GetUniversities", "GetScholarships",
              "GenerateExport", "DailyScraper", "WarmUp", "ScheduleManager"]
+# Health is standalone (no shared.mjs dependency - deliberately does not use
+# checkOriginSecret, see lambda/Health/index.mjs for why), so it is zipped
+# without shared.mjs rather than via the FUNCTIONS loop.
+STANDALONE_FUNCTIONS = ["Health"]
 
 
 def build():
@@ -20,6 +24,12 @@ def build():
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
             z.write(src, "index.mjs")
             z.write(SHARED, "shared.mjs")
+        print("Built %s (%d bytes)" % (zip_path, os.path.getsize(zip_path)))
+    for fn in STANDALONE_FUNCTIONS:
+        src = os.path.join(LAMBDA_DIR, fn, "index.mjs")
+        zip_path = os.path.join(OUT, fn + ".zip")
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+            z.write(src, "index.mjs")
         print("Built %s (%d bytes)" % (zip_path, os.path.getsize(zip_path)))
 
 

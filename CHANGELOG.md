@@ -6,6 +6,83 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-23
 
+### Added - student-experience and reliability improvements
+Reviewed the app from two angles: as a student trying to find a Clearing
+course under pressure, and as the systems engineer responsible for speed
+and accurate information. Implemented every improvement identified,
+verified UCAS Tariff points against Pearson's official table before
+touching any grading logic.
+
+**Data accuracy - closing the biggest gap found**
+- `DailyScraper` detected real changes to university Clearing pages daily
+  but the result never reached students - the status badge could be
+  silently stale. Now writes `lastAutomatedCheck` and `possibleStatusChange`
+  to each university record after every run. `possibleStatusChange` is only
+  ever set to `true` by the scraper (never cleared back to `false` by it) -
+  it stays flagged until a human re-seeds the data, so a detected drift
+  can't quietly disappear before anyone reviews it. `SearchCourses` now
+  returns these fields, and course cards show an explicit "automated check
+  flagged a possible change - confirm directly" warning when set.
+  `scripts/seed.py` writes a fresh `lastVerified` timestamp on every re-seed
+  (a full re-seed is what counts as a human-verified refresh).
+- Tightened the scraper's change-detection heuristic: previously a single
+  mention of the word "clearing" anywhere on a page counted as a signal
+  (a stray footer/nav link could trigger a false positive). Now requires
+  either more than one mention, or an explicit open/closed phrase
+  ("clearing is now open", "no vacancies", "fully booked", etc).
+- Recalibrated grading from an arbitrary internal 7-12 points-per-grade
+  scale to the real, published UCAS Tariff (A\*=56, A=48, B=40, C=32,
+  D=24, E=16 - verified directly against Pearson's official BTEC/A-level
+  tariff table and cross-checked against two independent sources). Offer
+  thresholds recalibrated to match (BBB=120, ABB=128, AAB=136, AAA=144,
+  A\*AA=152). Scoped to A-levels only per instruction; other qualification
+  types (IB, BTEC) were investigated and verified on the same points scale
+  but deliberately not added to keep scope to A-levels.
+
+**Speed and reliability**
+- Added a dedicated `/health` endpoint (new `Health` Lambda) for synthetic
+  monitoring - previously the only way to know the API was up was to run
+  a real search. Deliberately does not require the shared origin secret
+  (external monitors need direct access) and does a cheap DynamoDB
+  connectivity check.
+- Added `SearchDurationAlarm` (CloudWatch, `AWS/Lambda` `Duration` p99 over
+  2 evaluation periods) so a real speed regression - e.g. the DynamoDB scan
+  slowing down as the dataset grows - is caught directly, complementing the
+  existing request-count-based `SlowSearchAlarm`.
+- Added a regression test suite (`lambda/shared/shared.test.mjs`, Node's
+  built-in test runner, zero dependencies) covering the grading logic,
+  including an explicit regression test for the 2-subject-normalisation
+  fix from earlier this session. Wired into CI (`lambda-tests` job,
+  Node 22) alongside the existing `cfn-lint` job.
+
+**Student-facing UX**
+- The submit button now disables and shows "Searching..." while a request
+  is in flight, so a double-tap on a slow connection can't fire two
+  searches and burn the rate limit for nothing.
+- Added a 12-second client-side timeout (`AbortController`) with a
+  distinct "taking longer than usual" message, instead of an indefinite
+  spinner with no time bound.
+- Zero-result searches now show actionable, context-specific guidance
+  (e.g. "untick Russell Group only", "clear your course interest") instead
+  of a generic dead end.
+- Added client-side "did you mean [Subject]?" suggestions for mistyped
+  course interests (e.g. "Buisness", "Comp Sci"), using a small local
+  Levenshtein-distance check against the full subject list.
+- Searches now update the address bar (via `history.replaceState`, so the
+  back button isn't spammed) with the entered grades/subject/filters as
+  query parameters, so a student can copy the link and send it to
+  themselves or a parent. Opening such a link pre-fills the form but does
+  NOT auto-run the search.
+
+Deployed live and verified: `/health` returns `200` with a real DynamoDB
+connectivity check; a live search response includes `lastAutomatedCheck`
+and `possibleStatusChange`; the recalibrated BBB threshold still returns
+the same 20 matches as before recalibration (cross-checked against the
+pre-recalibration result from earlier this session); the new frontend
+code (confirmed by direct S3 object inspection, since CloudFront's GB
+geo-block prevented a direct check from this non-UK host) contains all
+five new functions.
+
 ### Changed - per-IP rate limits raised (30/minute, 700/hour)
 - `/search` per-IP rate limit raised from 10 requests/minute to 30/minute
   (verified live with a 32-request burst: requests 1-30 returned 200,

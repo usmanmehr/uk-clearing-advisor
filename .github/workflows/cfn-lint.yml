@@ -1,11 +1,9 @@
-name: Validate CloudFormation
+name: Validate CloudFormation and Lambda logic
 
 on:
   push:
     branches: [main]
-    paths: ['stacks/**', '.github/workflows/cfn-lint.yml']
-  pull_request:
-    paths: ['stacks/**', '.github/workflows/cfn-lint.yml']
+  pull_request: {}
 
 jobs:
   cfn-lint:
@@ -20,3 +18,15 @@ jobs:
       - name: Lint CloudFormation templates
         # Fail the build on errors only; warnings are reported but non-blocking.
         run: cfn-lint --non-zero-exit-code error stacks/*.yaml
+
+  lambda-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run grading logic regression tests
+        # Zero dependencies - uses Node's built-in test runner, matching the
+        # rest of the project's zero-npm-dependency approach.
+        run: node --test lambda/shared/*.test.mjs
