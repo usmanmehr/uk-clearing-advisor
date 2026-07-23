@@ -53,7 +53,7 @@ function validateForm() {
 let debounce;
 async function loadSubjects(q) {
   try {
-    const res = await fetch(`${API}/subjects${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+    const res = await fetch(`${API}/subjects${q ? `?q=${encodeURIComponent(q)}` : ''}`, { cache: 'no-store' });
     if (!res.ok) return;
     const data = await res.json();
     const list = el('subject-list');
@@ -143,6 +143,7 @@ async function onSubmit(e) {
   try {
     const res = await fetch(`${API}/search`, {
       method: 'POST',
+      cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });

@@ -87,8 +87,8 @@ function xmlEscape(s) {
 // ---------- XLSX (single "Shortlist" sheet, styled header) ----------
 function buildXlsx(rows) {
   const headers = ['University', 'Course', 'Status', 'Typical offer',
-    'Employability %', 'Median salary £', 'Clearing phone', 'Clearing page'];
-  const colWidths = [26, 30, 22, 16, 15, 16, 24, 40];
+    'Graduate prospects % (CUG 2027)', 'National median salary £ (HESA)', 'Clearing phone', 'Clearing page'];
+  const colWidths = [26, 30, 22, 16, 22, 22, 24, 40];
 
   const cell = (ref, style, text) =>
     `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(text)}</t></is></c>`;
@@ -105,7 +105,9 @@ function buildXlsx(rows) {
   rows.forEach((row, ri) => {
     const r = ri + 2;
     const vals = [row.universityName, row.courseTitle, row.statusBadge?.label || '',
-      row.typicalOffer, `${row.employabilityRate}`, `${row.salary15months}`,
+      row.typicalOffer,
+      row.graduateProspects != null ? `${row.graduateProspects}` : 'Not verified',
+      row.nationalMedianSalary != null ? `${row.nationalMedianSalary}` : 'Not verified',
       row.clearingPhone || '', row.clearingPage || ''];
     sheetData += `<row r="${r}">`;
     vals.forEach((v, c) => { sheetData += cell(`${colLetter(c)}${r}`, 2, v); });
@@ -172,11 +174,14 @@ function buildPdf(rows) {
   const lines = [];
   lines.push({ t: 'UK Clearing Advisor - Course shortlist', size: 16 });
   lines.push({ t: `Generated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`, size: 9 });
-  lines.push({ t: 'Estimated data. Confirm live vacancies by phone on Results Day.', size: 9 });
+  lines.push({ t: 'Offers are indicative. Confirm live vacancies by phone on Results Day.', size: 9 });
+  lines.push({ t: 'Salary = national median for the subject (HESA). Prospects % = per-university, CUG 2027, where published.', size: 8 });
   lines.push({ t: '', size: 9 });
   rows.slice(0, 30).forEach((r, i) => {
+    const prospects = r.graduateProspects != null ? `${r.graduateProspects}% graduate prospects (CUG 2027)` : 'Graduate prospects: not verified for this university';
+    const salary = r.nationalMedianSalary != null ? `national median salary GBP ${r.nationalMedianSalary} (HESA, ${r.salaryYear || '2022/23'})` : 'Salary: not shown (no course interest selected)';
     lines.push({ t: `${i + 1}. ${r.universityName} - ${r.courseTitle}`, size: 11 });
-    lines.push({ t: `   ${r.statusBadge?.label || ''} | ${r.typicalOffer} | ${r.employabilityRate}% in work/study | median GBP ${r.salary15months}`, size: 9 });
+    lines.push({ t: `   ${r.statusBadge?.label || ''} | ${r.typicalOffer} | ${prospects} | ${salary}`, size: 9 });
     lines.push({ t: `   Clearing: ${r.clearingPhone || 'see page'} | ${r.clearingPage || ''}`, size: 9 });
   });
 

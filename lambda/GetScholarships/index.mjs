@@ -30,7 +30,7 @@ export const handler = async (event) => {
       scholarships: items,
       count: items.length,
       notice: items.length ? undefined : 'No verified scholarship data loaded yet.',
-    }, { 'Cache-Control': 'public, max-age=3600' });
+    });
   } catch (e) {
     log('ERROR', { level: 'ERROR', msg: 'get scholarships failed', requestId, error: e.message });
     return errorResponse(500, 'INTERNAL_ERROR', 'Could not load scholarships.', requestId);

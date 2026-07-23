@@ -38,14 +38,14 @@ const PRIORITIES = ['salary', 'employability', 'ranking', 'balanced'];
 const LOCATIONS = ['any', 'england', 'scotland', 'wales', 'ni', 'london'];
 const STUDY_MODES = ['full-time', 'part-time', 'any'];
 
-// Reference data cached across warm invocations (refreshed each cold start).
+// Reference data (university contacts, subject medians) changes throughout
+// Clearing - status, phone lines and offers can change within the hour on
+// Results Day. So there is NO caching here: every request re-scans DynamoDB
+// so students always see the latest data, not a stale warm-Lambda snapshot.
 let SUBJECT_DEFAULTS_CACHE = null;
 let CONTACTS_CACHE = null;
-let CACHE_LOADED_AT = 0;
-const REF_TTL_MS = 5 * 60 * 1000;
 
 async function loadReferenceData() {
-  if (CONTACTS_CACHE && Date.now() - CACHE_LOADED_AT < REF_TTL_MS) return;
   const [contacts, defaults] = await Promise.all([
     ddb.send(new ScanCommand({ TableName: CONTACTS_TABLE })),
     ddb.send(new ScanCommand({ TableName: SUBJECT_DEFAULTS_TABLE })),
@@ -53,7 +53,6 @@ async function loadReferenceData() {
   CONTACTS_CACHE = contacts.Items || [];
   SUBJECT_DEFAULTS_CACHE = {};
   for (const d of defaults.Items || []) SUBJECT_DEFAULTS_CACHE[d.subjectGroup] = d;
-  CACHE_LOADED_AT = Date.now();
 }
 
 // Indicative clearing entry threshold (numeric, best-3 grade points).
