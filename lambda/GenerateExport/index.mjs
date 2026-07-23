@@ -6,7 +6,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   ddb, GetCommand, PutCommand, UpdateCommand,
-  maskIp, putMetric, log, json, errorResponse, checkRateLimit,
+  maskIp, putMetric, log, json, errorResponse, checkRateLimit, checkOriginSecret,
 } from './shared.mjs';
 
 const s3 = new S3Client({});
@@ -243,6 +243,11 @@ export const handler = async (event) => {
   const qp = event?.queryStringParameters || {};
   const queryId = qp.queryId;
   const format = (qp.format || 'xlsx').toLowerCase();
+
+  // Reject direct calls to the execute-api URL that skip CloudFront/WAF.
+  if (!checkOriginSecret(event)) {
+    return errorResponse(403, 'FORBIDDEN', 'Direct API access is not permitted.', requestId);
+  }
 
   if (!queryId) return errorResponse(400, 'INVALID_INPUT', 'queryId is required.', requestId);
   if (!['xlsx', 'pdf'].includes(format)) return errorResponse(400, 'INVALID_INPUT', 'format must be pdf or xlsx.', requestId);

@@ -17,6 +17,16 @@ Parameters:
   ChangeLogTable: { Type: String, Default: ClearingAdvisor-ChangeLog }
   ExportsBucket: { Type: String, Default: uk-clearing-advisor-exports-REPLACE_ACCOUNT_ID }
   SearchFunctionName: { Type: String, Default: ClearingAdvisor-SearchCourses }
+  ApiOriginSecret:
+    Type: String
+    NoEcho: true
+    Default: change-me
+    Description: >
+      Shared secret CloudFront sends as X-Origin-Verify. Every API-facing
+      Lambda (SearchCourses, GetSubjects, GetUniversities, GetScholarships,
+      GenerateExport) checks this and rejects requests that skip CloudFront
+      and hit execute-api directly. Must match the ApiOriginSecret used in
+      the cdn stack.
 
 Mappings: {}
 
@@ -253,7 +263,7 @@ Resources:
       TracingConfig: { Mode: Active }
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/SearchCourses-v8.zip
+        S3Key: lambda/SearchCourses-v9.zip
       Environment:
         Variables:
           CONTACTS_TABLE: !Ref ContactsTable
@@ -265,6 +275,7 @@ Resources:
           METRICS_NAMESPACE: ClearingAdvisor
           ENVIRONMENT: !Ref Environment
           LOG_LEVEL: !Ref LogLevel
+          API_ORIGIN_SECRET: !Ref ApiOriginSecret
 
   # Published version + alias so provisioned concurrency can serve API traffic.
   # NOTE: code has been hotfixed directly via the CLI a few times (accuracy
@@ -294,9 +305,12 @@ Resources:
       Role: !GetAtt GetSubjectsRole.Arn
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/GetSubjects.zip
+        S3Key: lambda/GetSubjects-v2.zip
       Environment:
-        Variables: { ENVIRONMENT: !Ref Environment, LOG_LEVEL: !Ref LogLevel }
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          LOG_LEVEL: !Ref LogLevel
+          API_ORIGIN_SECRET: !Ref ApiOriginSecret
 
   GetUniversitiesFunction:
     Type: AWS::Lambda::Function
@@ -310,12 +324,13 @@ Resources:
       Role: !GetAtt GetUniversitiesRole.Arn
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/GetUniversities.zip
+        S3Key: lambda/GetUniversities-v2.zip
       Environment:
         Variables:
           CONTACTS_TABLE: !Ref ContactsTable
           ENVIRONMENT: !Ref Environment
           LOG_LEVEL: !Ref LogLevel
+          API_ORIGIN_SECRET: !Ref ApiOriginSecret
 
   GetScholarshipsFunction:
     Type: AWS::Lambda::Function
@@ -329,12 +344,13 @@ Resources:
       Role: !GetAtt GetScholarshipsRole.Arn
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/GetScholarships.zip
+        S3Key: lambda/GetScholarships-v2.zip
       Environment:
         Variables:
           SCHOLARSHIPS_TABLE: !Ref ScholarshipsTable
           ENVIRONMENT: !Ref Environment
           LOG_LEVEL: !Ref LogLevel
+          API_ORIGIN_SECRET: !Ref ApiOriginSecret
 
   GenerateExportFunction:
     Type: AWS::Lambda::Function
@@ -349,7 +365,7 @@ Resources:
       TracingConfig: { Mode: Active }
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/GenerateExport.zip
+        S3Key: lambda/GenerateExport-v2.zip
       Environment:
         Variables:
           QUERY_CACHE_TABLE: !Ref QueryCacheTable
@@ -358,6 +374,7 @@ Resources:
           METRICS_NAMESPACE: ClearingAdvisor
           ENVIRONMENT: !Ref Environment
           LOG_LEVEL: !Ref LogLevel
+          API_ORIGIN_SECRET: !Ref ApiOriginSecret
 
   DailyScraperFunction:
     Type: AWS::Lambda::Function

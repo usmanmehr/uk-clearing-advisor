@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ddb, GetCommand, ScanCommand, PutCommand,
   SUBJECTS, REQUIRED_SUBJECTS, gradeTotal, resolveSubject, maskIp,
-  putMetric, log, json, errorResponse, checkRateLimit, ENVIRONMENT,
+  putMetric, log, json, errorResponse, checkRateLimit, checkOriginSecret, ENVIRONMENT,
 } from './shared.mjs';
 
 const CONTACTS_TABLE = process.env.CONTACTS_TABLE;
@@ -140,10 +140,20 @@ export const handler = async (event) => {
     return errorResponse(400, 'INVALID_INPUT', 'Request body must be valid JSON.', requestId);
   }
 
-  // WarmUp bypass (spec: token "__WARMUP__").
+  // WarmUp bypass (spec: token "__WARMUP__"). Checked BEFORE the origin
+  // secret because WarmUp invokes this Lambda directly, not via CloudFront
+  // /API Gateway, so it never carries the X-Origin-Verify header.
   if (body.cfTurnstileToken === '__WARMUP__') {
     await putMetric('WarmUpExecuted', 1);
     return json(200, { warmed: true });
+  }
+
+  // Reject direct calls to the execute-api URL that skip CloudFront/WAF
+  // (geo-block, rate limiting at the edge). Real traffic always goes
+  // through CloudFront, which injects this secret.
+  if (!checkOriginSecret(event)) {
+    await putMetric('DirectApiAccessBlocked', 1);
+    return errorResponse(403, 'FORBIDDEN', 'Direct API access is not permitted.', requestId);
   }
 
   // STEP 0 - honeypot. Non-empty "website" -> 200 empty (do not 403).

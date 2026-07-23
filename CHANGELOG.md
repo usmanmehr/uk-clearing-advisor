@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-23
 
+### Security - close direct API Gateway bypass of WAF/geo-block
+- The HTTP API was reachable directly at its `execute-api` URL, bypassing
+  the CloudFront GB geo-restriction and WAF rules entirely (only the
+  DynamoDB per-IP rate limit and CORS applied on that path). Flagged in the
+  Well-Architected review as a Medium finding.
+- Fixed using the same shared-secret pattern already used for the Grafana
+  origin: CloudFront now sends an `X-Origin-Verify` header (via
+  `OriginCustomHeaders` on the API origin, so it doesn't count against the
+  10-header cap on the origin request policy) to every request it forwards
+  to API Gateway. All five API-facing Lambdas (`SearchCourses`,
+  `GetSubjects`, `GetUniversities`, `GetScholarships`, `GenerateExport`)
+  now verify this header via a new `checkOriginSecret()` helper in
+  `shared.mjs` and return `403 FORBIDDEN` if it's missing or wrong.
+- `WarmUp`'s direct invoke of `SearchCourses` (bypasses API Gateway
+  entirely) is unaffected - the `__WARMUP__` bypass is checked before the
+  origin-secret check, since WarmUp never carries the header.
+- Fails open only if `API_ORIGIN_SECRET` is not configured at all (so this
+  is a no-op until deployed), fails closed (403) once configured.
+- Deployed live and verified: direct calls to the `execute-api` URL without
+  the header now return 403 on all five endpoints; the same call with the
+  correct header returns a full 200 response, proving real UK traffic
+  through CloudFront is unaffected.
+
 ### Changed - salary shown once per search, not per university
 - Salary is a national subject median (HESA) - identical for every
   university in a given search, so repeating it on every course card

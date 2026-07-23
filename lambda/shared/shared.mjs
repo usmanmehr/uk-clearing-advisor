@@ -23,6 +23,7 @@ const cw = new CloudWatchClient({});
 export const NS = process.env.METRICS_NAMESPACE || 'ClearingAdvisor';
 export const ENVIRONMENT = process.env.ENVIRONMENT || 'production';
 export const LOG_LEVEL = process.env.LOG_LEVEL || 'INFO';
+export const API_ORIGIN_SECRET = process.env.API_ORIGIN_SECRET || '';
 
 // Subject -> indicative UCAS course codes (Section 3 of the spec).
 export const SUBJECTS = {
@@ -184,6 +185,22 @@ export function json(statusCode, body, extraHeaders = {}) {
 
 export function errorResponse(statusCode, code, message, requestId, extra = {}) {
   return json(statusCode, { error: code, message, requestId, ...extra });
+}
+
+// Direct-access lockdown: the HTTP API is also reachable at its own
+// execute-api URL, which bypasses the WAF/geo-block that only protects the
+// CloudFront path. CloudFront is configured to send a shared secret
+// (X-Origin-Verify) to the API origin; each public-facing Lambda checks it
+// here so a caller hitting execute-api directly (skipping CloudFront) gets
+// a 403 instead of a real response. Fails closed if the secret is
+// configured but the header is missing/wrong; fails open (allows the
+// request) only if no secret has been configured at all, so this is a
+// no-op until the CDN stack's OriginSecret is actually deployed.
+export function checkOriginSecret(event) {
+  if (!API_ORIGIN_SECRET) return true;
+  const headers = event?.headers || {};
+  const provided = headers['x-origin-verify'] || headers['X-Origin-Verify'];
+  return provided === API_ORIGIN_SECRET;
 }
 
 // Fixed-window rate limiter backed by RateLimitsTable.

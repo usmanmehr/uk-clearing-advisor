@@ -11,6 +11,15 @@ Parameters:
   ApiDomain:
     Type: String
     Description: HTTP API host only (no scheme/path), e.g. xxxx.execute-api.eu-west-2.amazonaws.com
+  ApiOriginSecret:
+    Type: String
+    NoEcho: true
+    Default: change-me
+    Description: >
+      Shared secret CloudFront sends to the API origin as X-Origin-Verify.
+      Each Lambda behind the API checks this and rejects direct execute-api
+      calls that skip CloudFront/WAF (geo-block, edge rate limiting). Must
+      match the ApiOriginSecret used in the compute stack.
 
 Resources:
 
@@ -129,6 +138,13 @@ Resources:
             CustomOriginConfig:
               OriginProtocolPolicy: https-only
               OriginSSLProtocols: [TLSv1.2]
+            # Lets each Lambda behind the API reject direct execute-api calls
+            # that skip CloudFront/WAF (same pattern as the Grafana origin).
+            # A custom origin header, not a forwarded viewer header, so it
+            # does not count against the origin request policy's 10-header cap.
+            OriginCustomHeaders:
+              - HeaderName: X-Origin-Verify
+                HeaderValue: !Ref ApiOriginSecret
         DefaultCacheBehavior:
           TargetOriginId: s3-static
           ViewerProtocolPolicy: redirect-to-https
