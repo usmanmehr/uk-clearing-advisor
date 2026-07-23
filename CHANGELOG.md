@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-23
 
+### Changed - per-IP rate limit raised to 30/minute
+- `/search` per-IP rate limit raised from 10 requests/minute to 30/minute
+  (the 100/hour cap and the 5-per-30-min export limit are unchanged).
+- Deployed live (SearchCourses v12) and verified with a 32-request burst
+  from a single IP: requests 1-30 returned 200, requests 31-32 returned
+  429 - confirming the new limit is enforced precisely at the boundary.
+
 ### Fixed - students with only 2 A-levels always got zero results
 - Found while directly answering "is this fit for purpose": the search
   form's own stated minimum is 2 A-levels, but `gradeTotal()` summed

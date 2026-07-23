@@ -182,8 +182,8 @@ export const handler = async (event) => {
 
   // STEP 1 - Turnstile: no key configured -> allow through (spec: never block).
 
-  // STEP 2 - rate limiting (per IP: 10/min, 100/hour).
-  const perMin = await checkRateLimit(RATE_LIMITS_TABLE, `ip#${sourceIp}#m`, 10, 60);
+  // STEP 2 - rate limiting (per IP: 30/min, 100/hour).
+  const perMin = await checkRateLimit(RATE_LIMITS_TABLE, `ip#${sourceIp}#m`, 30, 60);
   if (!perMin.allowed) {
     await putMetric('RateLimitedCount', 1);
     return errorResponse(429, 'RATE_LIMITED', 'Too many requests. Please wait a moment.', requestId, { retryAfter: perMin.retryAfter });
