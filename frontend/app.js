@@ -72,21 +72,17 @@ function courseCard(c) {
   const est = c.estimatedData ? ' <span class="badge Amber">Indicative offer</span>' : '';
 
   // Only show figures that are verified. Graduate prospects are per-university
-  // (CUG 2027) where published; salary is the national median for the subject
-  // (HESA), clearly labelled so it is never read as a university-specific wage.
+  // (CUG 2027) where published and DO vary by university, so they stay on
+  // each card. Salary is a national subject median (identical for every
+  // university in this search) so it is shown once above the results list
+  // instead - see renderSalaryBanner.
   const stats = [];
   if (c.graduateProspects != null) {
     stats.push(`<div class="stat"><b>${c.graduateProspects}%</b><span>graduate prospects</span></div>`);
   }
-  if (c.nationalMedianSalary != null) {
-    stats.push(`<div class="stat"><b>${fmtGBP(c.nationalMedianSalary)}</b><span>national median${c.salarySubject ? ' &middot; ' + c.salarySubject : ''}</span></div>`);
-  }
   stats.push(`<div class="stat"><b>${c.typicalOffer}</b><span>typical offer</span></div>`);
 
   const sources = [];
-  if (c.nationalMedianSalary != null && c.salarySourceUrl) {
-    sources.push(`<a href="${c.salarySourceUrl}" target="_blank" rel="noopener">Salary: HESA Graduate Outcomes ${c.salaryYear || ''}</a>`);
-  }
   if (c.graduateProspects != null && c.graduateProspectsSourceUrl) {
     sources.push(`<a href="${c.graduateProspectsSourceUrl}" target="_blank" rel="noopener">Prospects: ${c.graduateProspectsYear || 'CUG 2027'}</a>`);
   }
@@ -113,6 +109,24 @@ function renderMore() {
   container.insertAdjacentHTML('beforeend', next.map(courseCard).join(''));
   shown += next.length;
   el('show-more').hidden = shown >= lastResults.length;
+}
+
+// Salary is a national subject median - identical for every university in
+// this result set - so it's shown once here rather than repeated per card.
+function renderSalaryBanner(salaryContext) {
+  const banner = el('salary-banner');
+  if (!salaryContext || salaryContext.nationalMedianSalary == null) {
+    banner.hidden = true;
+    return;
+  }
+  const sourceLink = salaryContext.sourceUrl
+    ? `<a href="${salaryContext.sourceUrl}" target="_blank" rel="noopener">HESA Graduate Outcomes ${salaryContext.year || ''}</a>`
+    : `HESA Graduate Outcomes ${salaryContext.year || ''}`;
+  banner.innerHTML =
+    `National median salary for <b>${salaryContext.subject}</b> graduates: `
+    + `<b>${fmtGBP(salaryContext.nationalMedianSalary)}</b> (15 months post-graduation, ${sourceLink}). `
+    + `This is a national figure - it is the same for every university below, not a per-university wage.`;
+  banner.hidden = false;
 }
 
 function showSkeletons() {
@@ -150,12 +164,14 @@ async function onSubmit(e) {
     const data = await res.json();
     if (!res.ok) {
       el('results').innerHTML = '';
+      el('salary-banner').hidden = true;
       el('results-summary').innerHTML = `<span class="error">${data.message || 'Something went wrong.'}</span>`;
       return;
     }
     lastResults = data.results || [];
     shown = 0;
     el('results').innerHTML = '';
+    renderSalaryBanner(data.salaryContext);
     const secs = ((performance.now() - started) / 1000).toFixed(1);
     if (!lastResults.length) {
       el('results-summary').textContent = 'No matching courses found. Try widening your filters.';
@@ -168,6 +184,7 @@ async function onSubmit(e) {
     renderMore();
   } catch (err) {
     el('results').innerHTML = '';
+    el('salary-banner').hidden = true;
     el('results-summary').innerHTML = '<span class="error">Could not reach the service. Please try again.</span>';
   }
 }

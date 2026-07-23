@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-23
 
+### Changed - salary shown once per search, not per university
+- Salary is a national subject median (HESA) - identical for every
+  university in a given search, so repeating it on every course card
+  overstated its precision and could be misread as a per-university figure.
+  It is now shown once, in a banner above the results ("National median
+  salary for Economics graduates: £35,750..."), with a link to the source.
+- `POST /search` response now returns a top-level `salaryContext` object
+  (subject, nationalMedianSalary, source, sourceUrl, year) instead of
+  repeating `nationalMedianSalary` on every result. Ranking and the
+  `minSalary` filter are unaffected - salary is still used internally, just
+  not echoed per-result.
+- `GenerateExport` (XLSX/PDF) prints the same salary note once at the top of
+  the shortlist instead of a "National median salary" column repeated on
+  every row.
+- Per-university **graduate prospects** (Complete University Guide 2027)
+  is unchanged and still shown on every card - it genuinely varies by
+  university, unlike salary.
+- Deliberately did NOT attempt to show real per-university salary
+  differences (e.g. Oxbridge vs other universities) - no verified
+  per-university, per-subject salary dataset is loaded yet. Doing this
+  properly needs the Discover Uni API or DfE LEO provider-level data
+  (see Option 1/2 in the earlier data-correction notice), not an estimate
+  from the single anecdotal figure available.
+
 ### Fixed - Well-Architected review follow-up
 - **Security**: API Gateway CORS was still `AllowOrigins: ["*"]` in production,
   even though the CloudFront app domain has existed since launch. Since the

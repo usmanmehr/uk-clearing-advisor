@@ -175,3 +175,9 @@ button.remove:hover { background: var(--red-bg); }
 .note-line { font-size: .8rem; color: var(--muted); font-style: italic; margin: .4rem 0; }
 .sources { font-size: .76rem; color: var(--muted); margin: .1rem 0 .3rem; }
 .sources a { color: var(--navy-2); }
+.salary-banner {
+  background: var(--green-bg); border: 1px solid #bfe0c8; color: var(--ink);
+  padding: .7rem .9rem; border-radius: 8px; font-size: .92rem; margin: 0 0 .8rem;
+}
+.salary-banner b { color: var(--navy); }
+.salary-banner a { color: var(--navy-2); font-weight: 600; }

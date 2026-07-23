@@ -85,10 +85,10 @@ function xmlEscape(s) {
 }
 
 // ---------- XLSX (single "Shortlist" sheet, styled header) ----------
-function buildXlsx(rows) {
+function buildXlsx(rows, salaryContext) {
   const headers = ['University', 'Course', 'Status', 'Typical offer',
-    'Graduate prospects % (CUG 2027)', 'National median salary £ (HESA)', 'Clearing phone', 'Clearing page'];
-  const colWidths = [26, 30, 22, 16, 22, 22, 24, 40];
+    'Graduate prospects % (CUG 2027)', 'Clearing phone', 'Clearing page'];
+  const colWidths = [26, 30, 22, 16, 22, 24, 40];
 
   const cell = (ref, style, text) =>
     `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(text)}</t></is></c>`;
@@ -98,20 +98,35 @@ function buildXlsx(rows) {
     return s;
   };
 
+  let rowNum = 1;
   let sheetData = '<sheetData>';
-  sheetData += '<row r="1" ht="20" customHeight="1">';
-  headers.forEach((h, c) => { sheetData += cell(`${colLetter(c)}1`, 1, h); });
+
+  // Salary is a national subject median, identical for every row, so it is
+  // printed once above the table rather than repeated per university.
+  if (salaryContext && salaryContext.nationalMedianSalary != null) {
+    const note = `National median salary for ${salaryContext.subject}: `
+      + `GBP ${salaryContext.nationalMedianSalary} (HESA Graduate Outcomes, `
+      + `${salaryContext.year || '2022/23'}). This is a national figure, not per-university.`;
+    sheetData += `<row r="${rowNum}" ht="20" customHeight="1">${cell(`A${rowNum}`, 2, note)}</row>`;
+    rowNum += 1;
+  }
+
+  const headerRow = rowNum;
+  sheetData += `<row r="${headerRow}" ht="20" customHeight="1">`;
+  headers.forEach((h, c) => { sheetData += cell(`${colLetter(c)}${headerRow}`, 1, h); });
   sheetData += '</row>';
-  rows.forEach((row, ri) => {
-    const r = ri + 2;
+  rowNum += 1;
+
+  rows.forEach((row) => {
+    const r = rowNum;
     const vals = [row.universityName, row.courseTitle, row.statusBadge?.label || '',
       row.typicalOffer,
       row.graduateProspects != null ? `${row.graduateProspects}` : 'Not verified',
-      row.nationalMedianSalary != null ? `${row.nationalMedianSalary}` : 'Not verified',
       row.clearingPhone || '', row.clearingPage || ''];
     sheetData += `<row r="${r}">`;
     vals.forEach((v, c) => { sheetData += cell(`${colLetter(c)}${r}`, 2, v); });
     sheetData += '</row>';
+    rowNum += 1;
   });
   sheetData += '</sheetData>';
 
@@ -121,7 +136,7 @@ function buildXlsx(rows) {
 
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
     + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
-    + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
+    + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${headerRow}" topLeftCell="A${headerRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
     + `<sheetFormatPr defaultRowHeight="15"/>${cols}${sheetData}`
     + `<pageMargins left="0.5" right="0.5" top="0.5" bottom="0.5" header="0.3" footer="0.3"/></worksheet>`;
 
@@ -170,18 +185,24 @@ function buildXlsx(rows) {
 
 // ---------- PDF (A4, simple text layout) ----------
 function pdfEscape(s) { return String(s ?? '').replace(/([\\()])/g, '\\$1'); }
-function buildPdf(rows) {
+function buildPdf(rows, salaryContext) {
   const lines = [];
   lines.push({ t: 'UK Clearing Advisor - Course shortlist', size: 16 });
   lines.push({ t: `Generated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`, size: 9 });
   lines.push({ t: 'Offers are indicative. Confirm live vacancies by phone on Results Day.', size: 9 });
-  lines.push({ t: 'Salary = national median for the subject (HESA). Prospects % = per-university, CUG 2027, where published.', size: 8 });
+  if (salaryContext && salaryContext.nationalMedianSalary != null) {
+    lines.push({
+      t: `National median salary for ${salaryContext.subject}: GBP ${salaryContext.nationalMedianSalary} `
+        + `(HESA Graduate Outcomes, ${salaryContext.year || '2022/23'}). National figure, not per-university.`,
+      size: 9,
+    });
+  }
+  lines.push({ t: 'Graduate prospects % below is per-university (Complete University Guide 2027), where published.', size: 8 });
   lines.push({ t: '', size: 9 });
   rows.slice(0, 30).forEach((r, i) => {
     const prospects = r.graduateProspects != null ? `${r.graduateProspects}% graduate prospects (CUG 2027)` : 'Graduate prospects: not verified for this university';
-    const salary = r.nationalMedianSalary != null ? `national median salary GBP ${r.nationalMedianSalary} (HESA, ${r.salaryYear || '2022/23'})` : 'Salary: not shown (no course interest selected)';
     lines.push({ t: `${i + 1}. ${r.universityName} - ${r.courseTitle}`, size: 11 });
-    lines.push({ t: `   ${r.statusBadge?.label || ''} | ${r.typicalOffer} | ${prospects} | ${salary}`, size: 9 });
+    lines.push({ t: `   ${r.statusBadge?.label || ''} | ${r.typicalOffer} | ${prospects}`, size: 9 });
     lines.push({ t: `   Clearing: ${r.clearingPhone || 'see page'} | ${r.clearingPage || ''}`, size: 9 });
   });
 
@@ -247,8 +268,12 @@ export const handler = async (event) => {
     }
 
     const rows = JSON.parse(item.results || '[]');
+    let salaryContext = null;
+    try {
+      salaryContext = item.salaryContext ? JSON.parse(item.salaryContext) : null;
+    } catch { /* older cached queries may not have this field */ }
     const isXlsx = format === 'xlsx';
-    const file = isXlsx ? buildXlsx(rows) : buildPdf(rows);
+    const file = isXlsx ? buildXlsx(rows, salaryContext) : buildPdf(rows, salaryContext);
     const key = `exports/${queryId}/${Date.now()}.${format}`;
     const contentType = isXlsx
       ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
