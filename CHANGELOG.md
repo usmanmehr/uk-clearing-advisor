@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-23
 
+### Added - Results Day scraper runs every 15 minutes
+- `DailyScraper` previously ran once a day (07:00 UTC) year-round. On a
+  normal day that's a reasonable cadence, but on Results Day a university
+  can open, close and reopen Clearing vacancies multiple times within a
+  few hours - a once-daily check would miss all of that and could leave
+  `possibleStatusChange` unset even though the page genuinely changed and
+  changed back before the next check.
+- Added a second, time-bounded EventBridge rule
+  (`ClearingAdvisor-ResultsDayScraper`) that runs the same `DailyScraper`
+  function every 15 minutes from 04:00 to 20:00 UTC, but only on 13 Aug
+  2026 - matching the existing `ScaleUp`/`ScaleDown` window in
+  `stacks/scaling.yaml` exactly, so the higher-frequency check is active
+  for the same period the infrastructure is already scaled up for Results
+  Day traffic. No code change to `DailyScraper` itself - it's idempotent
+  (compares against the last stored scrape state each run), so running it
+  more often only narrows the detection window, it doesn't change the
+  logic. The year-round daily cadence is unchanged; this doesn't need
+  manual disabling afterwards since the rule is scoped to a single date.
+- Verified live: the rule is `ENABLED` with schedule
+  `cron(0/15 4-20 13 8 ? 2026)` and targets the existing
+  `ClearingAdvisor-DailyScraper` function (confirmed via
+  `events describe-rule` / `list-targets-by-rule`), and the cron expression
+  itself was validated by AWS EventBridge directly (created and then
+  deleted a throwaway test rule with the same expression) before being
+  committed to the template.
+
 ### Added - student-experience and reliability improvements
 Reviewed the app from two angles: as a student trying to find a Clearing
 course under pressure, and as the systems engineer responsible for speed

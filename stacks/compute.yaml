@@ -460,7 +460,7 @@ Resources:
         Variables:
           CONTACTS_TABLE: !Ref ContactsTable
 
-  # Daily scraper at 07:00 UTC.
+  # Daily scraper at 07:00 UTC (year-round cadence, unchanged).
   DailyScraperSchedule:
     Type: AWS::Events::Rule
     Properties:
@@ -477,6 +477,36 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt DailyScraperSchedule.Arn
+
+  # Results Day only: same DailyScraperFunction, run every 15 minutes from
+  # 04:00 to 20:00 UTC on 13 Aug 2026 - matching the ScaleUp/ScaleDown window
+  # in stacks/scaling.yaml, since that's when universities are most likely
+  # to open/close vacancies multiple times in a day and a once-daily check
+  # is the least useful. Time-bounded (year=2026) so this rule fires exactly
+  # once and never needs manual disabling afterwards. No code change to
+  # DailyScraper itself - it's idempotent (compares against the last stored
+  # scrape state), so running it more often simply narrows the detection
+  # window; it doesn't change what "changed" means.
+  # NOTE: the 07:00 UTC run from DailyScraperSchedule above falls on this
+  # same 15-minute grid, so on 13 Aug there will be one overlapping run at
+  # 07:00 UTC (harmless - the scraper is idempotent and bounded-concurrency,
+  # just a few seconds of duplicate work that day).
+  ResultsDayScraperSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: ClearingAdvisor-ResultsDayScraper
+      ScheduleExpression: 'cron(0/15 4-20 13 8 ? 2026)'
+      State: ENABLED
+      Targets:
+        - Id: ResultsDayScraper
+          Arn: !GetAtt DailyScraperFunction.Arn
+  ResultsDayScraperInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DailyScraperFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ResultsDayScraperSchedule.Arn
 
   # WarmUp on Results Day (13 Aug 2026) at 05:00 UTC = 06:00 BST.
   WarmUpSchedule:
