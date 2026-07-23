@@ -6,12 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-23
 
-### Changed - per-IP rate limit raised to 30/minute
+### Changed - per-IP rate limits raised (30/minute, 700/hour)
 - `/search` per-IP rate limit raised from 10 requests/minute to 30/minute
-  (the 100/hour cap and the 5-per-30-min export limit are unchanged).
-- Deployed live (SearchCourses v12) and verified with a 32-request burst
-  from a single IP: requests 1-30 returned 200, requests 31-32 returned
-  429 - confirming the new limit is enforced precisely at the boundary.
+  (verified live with a 32-request burst: requests 1-30 returned 200,
+  31-32 returned 429, confirming the boundary).
+- Hourly cap raised from 100/hour to 700/hour, so a real single-IP user
+  isn't blocked by the hour window before the per-minute window would
+  matter (30/min sustained now allows ~23 minutes before the hourly cap,
+  vs under 4 minutes previously). The export limit (5 per 30 min) is
+  unchanged.
+- Deployed live (SearchCourses, published version 13) and verified by
+  downloading the exact deployed code artifact from the live alias and
+  confirming the `700` value is present in the running source, not just
+  the deploy pipeline's reported success.
 
 ### Fixed - students with only 2 A-levels always got zero results
 - Found while directly answering "is this fit for purpose": the search
