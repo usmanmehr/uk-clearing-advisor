@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-23
 
+### Security - pen test fixes
+- Ran a non-destructive penetration test against the live infrastructure
+  (access control, injection, rate limiting, information disclosure,
+  Grafana/admin surface). Full findings and what held up are in the pen
+  test report; three gaps found and fixed here:
+- **Missing security headers** - added a CloudFront `ResponseHeadersPolicy`
+  (`stacks/cdn.yaml`) applying HSTS, a strict `Content-Security-Policy`
+  (`default-src 'self'`, no `unsafe-inline`), `X-Frame-Options: DENY`,
+  `Referrer-Policy`, and `X-XSS-Protection` to both the site and `/api/*`
+  cache behaviours. Moved the honeypot field's inline `style` attribute
+  into a CSS class (`.honeypot`) so the CSP could ship without
+  `unsafe-inline` for styles.
+- **Unbounded `subjects[]` array** - `/search` only checked for at least 2
+  subjects, no upper bound; a 2000-item/500KB payload was accepted. Added
+  a `MAX_SUBJECTS = 10` cap and a 100-character limit on individual subject
+  names and `courseInterest`.
+- **Grafana nginx version disclosure** - `server: nginx/1.30.3` was
+  returned on every response. Added `server_tokens off;` to the nginx
+  config in `grafana.yaml`'s user-data (for future instances) and applied
+  the same change live via SSM to the running instance.
+- All three verified live: CloudFront responses now carry the new security
+  headers on both cache behaviours; a 50-subject payload is rejected with
+  `A maximum of 10 A-level subjects is supported`; Grafana now returns
+  `server: nginx` with no version number.
+- Noted but out of scope by request: a real, active AWS access key was
+  found in plaintext in the operator's local `~/.aws/credentials`,
+  `.bak`, and `.bash_history` - confirmed NOT present anywhere in the git
+  repository or its history. Workstation-local risk, not an application
+  vulnerability; no changes made to the workstation per instruction.
+
 ### Security - close direct API Gateway bypass of WAF/geo-block
 - The HTTP API was reachable directly at its `execute-api` URL, bypassing
   the CloudFront GB geo-restriction and WAF rules entirely (only the

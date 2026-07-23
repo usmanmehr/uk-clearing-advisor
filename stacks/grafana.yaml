@@ -203,6 +203,8 @@ Resources:
 
           # Minimal nginx.conf so only our server blocks exist (drops the
           # stock :80 default server that would clash with the origin listener).
+          # server_tokens off hides the exact nginx version from response
+          # headers (defence in depth - pen test finding).
           cat >/etc/nginx/nginx.conf <<'EOF'
           user nginx;
           worker_processes auto;
@@ -214,6 +216,7 @@ Resources:
               default_type application/octet-stream;
               sendfile on;
               keepalive_timeout 65;
+              server_tokens off;
               include /etc/nginx/conf.d/*.conf;
           }
           EOF

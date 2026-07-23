@@ -91,15 +91,26 @@ const REGION_MATCH = {
   london: (u) => (u.location || '').toLowerCase().includes('london'),
 };
 
+const MAX_SUBJECTS = 10; // no legitimate student has more than a handful of A-levels
+
 function validate(body) {
   if (!body || typeof body !== 'object') return 'Request body is required.';
   if (!Array.isArray(body.subjects) || body.subjects.length < 2) {
     return 'At least two A-level subject and grade pairs are required.';
   }
+  if (body.subjects.length > MAX_SUBJECTS) {
+    return `A maximum of ${MAX_SUBJECTS} A-level subjects is supported.`;
+  }
   for (const s of body.subjects) {
     if (!s || typeof s.subject !== 'string' || typeof s.grade !== 'string') {
       return 'Each subject must have a subject name and grade.';
     }
+    if (s.subject.length > 100) {
+      return 'Subject name is too long.';
+    }
+  }
+  if (body.courseInterest != null && (typeof body.courseInterest !== 'string' || body.courseInterest.length > 100)) {
+    return 'Course interest is too long.';
   }
   if (body.priority && !PRIORITIES.includes(body.priority)) return 'Invalid priority.';
   if (body.location && !LOCATIONS.includes(body.location)) return 'Invalid location.';

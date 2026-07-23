@@ -181,3 +181,4 @@ button.remove:hover { background: var(--red-bg); }
 }
 .salary-banner b { color: var(--navy); }
 .salary-banner a { color: var(--navy-2); font-weight: 600; }
+.honeypot { display: none; position: absolute; left: -9999px; }

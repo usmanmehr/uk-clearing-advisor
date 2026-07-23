@@ -83,6 +83,39 @@ Resources:
         CookiesConfig: { CookieBehavior: none }
         QueryStringsConfig: { QueryStringBehavior: all }
 
+  # Security headers on every response from the default (static site) cache
+  # behaviour. Strict CSP is possible because the frontend is vanilla JS/CSS
+  # with no inline scripts/styles, no external fonts/CDNs, and no analytics.
+  SecurityHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: clearing-advisor-security-headers
+        SecurityHeadersConfig:
+          StrictTransportSecurity:
+            Override: true
+            AccessControlMaxAgeSec: 63072000
+            IncludeSubdomains: true
+            Preload: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            Override: true
+            FrameOption: DENY
+          ReferrerPolicy:
+            Override: true
+            ReferrerPolicy: strict-origin-when-cross-origin
+          XSSProtection:
+            Override: true
+            Protection: true
+            ModeBlock: true
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: >-
+              default-src 'self'; script-src 'self'; style-src 'self';
+              img-src 'self' data:; connect-src 'self'; font-src 'self';
+              frame-ancestors 'none'; base-uri 'none'; form-action 'self'
+
   OriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
@@ -150,6 +183,7 @@ Resources:
           ViewerProtocolPolicy: redirect-to-https
           AllowedMethods: [GET, HEAD, OPTIONS]
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized
+          ResponseHeadersPolicyId: !Ref SecurityHeadersPolicy
           Compress: true
         CacheBehaviors:
           - PathPattern: /api/*
@@ -158,6 +192,7 @@ Resources:
             AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
             CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
             OriginRequestPolicyId: !Ref ApiGeoOriginRequestPolicy
+            ResponseHeadersPolicyId: !Ref SecurityHeadersPolicy
             Compress: true
             FunctionAssociations:
               - EventType: viewer-request
