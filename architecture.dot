@@ -23,12 +23,13 @@ digraph UKClearingAdvisor {
   subgraph cluster_app {
     label="Application  [stacks: api, compute, data (eu-west-2, serverless)]";
     style="rounded,filled"; fillcolor="#EDEFF4"; color="#1F3864";
-    APIGW  [label="API Gateway HTTP API  [api]\nid REPLACE_API_ID  |  stage $default\nPOST /search  GET /subjects /universities\n/scholarships /export /health\nthrottle burst100/rate50 (baseline)\naccess logs 7d"];
-    SC   [label="Lambda SearchCourses  [compute]\nnode22 512MB/10s, X-Ray\nalias 'live' -> version V4\ncode: lambda/SearchCourses-v4.zip\nrole: SearchCoursesRole", fillcolor="#DDEBF7"];
-    GS   [label="Lambda GetSubjects  [compute]\n128MB/5s", fillcolor="#DDEBF7"];
-    GU   [label="Lambda GetUniversities  [compute]\n256MB/10s", fillcolor="#DDEBF7"];
-    GSCH [label="Lambda GetScholarships  [compute]\n256MB/10s (GSI SubjectIndex)", fillcolor="#DDEBF7"];
-    GE   [label="Lambda GenerateExport  [compute]\n1024MB/30s, X-Ray\nzero-dep xlsx+pdf", fillcolor="#DDEBF7"];
+    APIGW  [label="API Gateway HTTP API  [api]\nid REPLACE_API_ID  |  stage $default\nPOST /search  GET /subjects /universities\n/scholarships /export /health\nthrottle burst100/rate50 (baseline)\naccess logs 7d\nCORS locked to app CloudFront origin"];
+    SC   [label="Lambda SearchCourses  [compute]\nnode22 512MB/10s, X-Ray\nalias 'live' -> latest version\nchecks X-Origin-Verify secret\nrole: SearchCoursesRole", fillcolor="#DDEBF7"];
+    GS   [label="Lambda GetSubjects  [compute]\n128MB/5s\nchecks X-Origin-Verify", fillcolor="#DDEBF7"];
+    GU   [label="Lambda GetUniversities  [compute]\n256MB/10s\nchecks X-Origin-Verify", fillcolor="#DDEBF7"];
+    GSCH [label="Lambda GetScholarships  [compute]\n256MB/10s (GSI SubjectIndex)\nchecks X-Origin-Verify", fillcolor="#DDEBF7"];
+    GE   [label="Lambda GenerateExport  [compute]\n1024MB/30s, X-Ray\nzero-dep xlsx+pdf\nchecks X-Origin-Verify", fillcolor="#DDEBF7"];
+    HLTH [label="Lambda Health  [compute]\n128MB/5s\nno secret check (external monitors)\nDynamoDB connectivity check", fillcolor="#DDEBF7"];
     DDB  [label="DynamoDB 8 tables  [data]\nUniversityContacts, SubjectDefaults,\nClearingCache, QueryCache, RateLimits,\nChangeLog, CUGRankings, Scholarships\non-demand | TTL | PITR | SSE", shape=box3d, fillcolor="#E4DFEC"];
     EXP  [label="S3 exports  [cdn]\nuk-clearing-advisor-exports-REPLACE_ACCOUNT_ID\n1-day lifecycle", fillcolor="#E2EFDA"];
     S3SITE [label="S3 static site  [cdn]\nuk-clearing-advisor-site-REPLACE_ACCOUNT_ID\nprivate + OAC (vanilla frontend)", fillcolor="#E2EFDA"];
@@ -38,12 +39,13 @@ digraph UKClearingAdvisor {
   /* ---------- Automation & observability ---------- */
   subgraph cluster_ops {
     label="Automation & observability  [stacks: scaling, observability, compute (eu-west-2)]";
+    labelloc="t"; margin=24;
     style="rounded,filled"; fillcolor="#EDEFF4"; color="#1F3864";
-    EBS  [label="EventBridge  [scaling/compute]\nScaleUp cron(0 4 13 8 ? 2026)\nScaleDown cron(0 20 13 8 ? 2026)\nDailyScraper cron(0 7 * * ? *)\nWarmUp cron(0 5 13 8 ? 2026)"];
+    EBS  [label="EventBridge  [scaling/compute]\nScaleUp cron(0 4 13 8 ? 2026)\nScaleDown cron(0 20 13 8 ? 2026)\nDailyScraper cron(0 7 * * ? *)\nResultsDayScraper cron(0/15 4-20 13 8 ? 2026)\nWarmUp cron(0 5 13 8 ? 2026)"];
     SCHED [label="Lambda ScheduleManager  [scaling]\nPEAK=100 | UP 400/800 | BASE 50/100", fillcolor="#DDEBF7"];
-    DS   [label="Lambda DailyScraper  [compute]\n512MB/300s, global fetch", fillcolor="#DDEBF7"];
+    DS   [label="Lambda DailyScraper  [compute]\n512MB/300s, global fetch\ntightened open/closed-phrase heuristic\nwrites possibleStatusChange+lastAutomatedCheck", fillcolor="#DDEBF7"];
     WU   [label="Lambda WarmUp  [compute]\ninvokes SearchCourses __WARMUP__", fillcolor="#DDEBF7"];
-    CW   [label="CloudWatch  [observability]\nns ClearingAdvisor | Logs Insights\n7 alarms | dashboards:\nOperations, ResultsDay", fillcolor="#FCE4D6"];
+    CW   [label="CloudWatch  [observability]\nns ClearingAdvisor | Logs Insights\n8 alarms (incl. SearchDuration p99) | dashboards:\nOperations, ResultsDay", fillcolor="#FCE4D6"];
     SNS  [label="SNS ClearingAdvisorAlerts  [observability]\nemail: your-email@example.com", fillcolor="#FCE4D6"];
   }
 
@@ -63,9 +65,9 @@ digraph UKClearingAdvisor {
   CF1  -> S3SITE [label="default | CachingOptimized"];
   CF1  -> APIGW  [label="/api/* | CachingDisabled\nApiGeoOriginRequestPolicy (CloudFront-Viewer + device)\nApiRewriteFunction strips /api"];
   APIGW -> SC   [label="POST /search"];
-  APIGW -> GS; APIGW -> GU; APIGW -> GSCH; APIGW -> GE;
+  APIGW -> GS; APIGW -> GU; APIGW -> GSCH; APIGW -> GE; APIGW -> HLTH [label="GET /health"];
   SC   -> DDB  [label="read Contacts/SubjectDefaults/CUG\nrw ClearingCache/QueryCache/RateLimits"];
-  GU   -> DDB; GSCH -> DDB; GE -> DDB;
+  GU   -> DDB; GSCH -> DDB; GE -> DDB; HLTH -> DDB [label="GetItem (liveness check)"];
   GE   -> EXP  [label="PutObject + presigned GET (1h)"];
   ART  -> SC   [label="code (S3)", style=dashed, dir=none];
 
@@ -74,7 +76,7 @@ digraph UKClearingAdvisor {
   SCHED -> SC    [label="PutProvisionedConcurrency(100)"];
   SCHED -> APIGW [label="UpdateStage throttle 400/800"];
   WU    -> SC    [label="warm invoke"];
-  DS    -> DDB   [label="scan Contacts, write ChangeLog"];
+  DS    -> DDB   [label="scan+update Contacts, write ChangeLog"];
   SC    -> CW    [label="PutMetricData + logs\n(geo, device, UA)"];
   GE -> CW; DS -> CW;
   CW    -> SNS   [label="alarm actions"];

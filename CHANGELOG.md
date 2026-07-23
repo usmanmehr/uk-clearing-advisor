@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-23
 
+### Changed - architecture diagram brought up to date
+- `architecture.dot`/`.png`/`.svg` had drifted from the live system after
+  this session's changes and no longer reflected: the new `Health` Lambda
+  and its `/health` route, the `X-Origin-Verify` secret check now enforced
+  on every API-facing Lambda, the new `ResultsDayScraper` EventBridge rule,
+  `DailyScraper`'s tightened heuristic and its new write-back to
+  `UniversityContacts` (previously read-only), the eighth CloudWatch alarm
+  (`SearchDurationAlarm`), and a stale `SearchCourses-v4.zip` version label.
+  Regenerated the PNG/SVG from the corrected `.dot` source with Graphviz.
+
 ### Added - Results Day scraper runs every 15 minutes
 - `DailyScraper` previously ran once a day (07:00 UTC) year-round. On a
   normal day that's a reasonable cadence, but on Results Day a university
