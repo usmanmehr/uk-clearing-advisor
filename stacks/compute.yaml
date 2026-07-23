@@ -253,7 +253,7 @@ Resources:
       TracingConfig: { Mode: Active }
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/SearchCourses-v7.zip
+        S3Key: lambda/SearchCourses-v8.zip
       Environment:
         Variables:
           CONTACTS_TABLE: !Ref ContactsTable
