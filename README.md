@@ -9,6 +9,8 @@ plus a Grafana analytics stack showing where visitors come from.
 Built on AWS with CloudFormation (S3, CloudFront, WAF, API Gateway, Lambda,
 DynamoDB, EventBridge, CloudWatch, Cognito, EC2 for Grafana).
 
+See [CHANGELOG.md](CHANGELOG.md) for what's changed between releases.
+
 ![Architecture](architecture.png)
 
 ## Features
