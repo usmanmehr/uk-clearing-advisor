@@ -99,12 +99,26 @@ export const REQUIRED_SUBJECTS = {
 
 export const GRADE_VALUES = { 'A*': 12, A: 11, B: 10, C: 9, D: 8, E: 7 };
 
-// Sum of the best three A-level grades.
+// Sum of the best three A-level grades, normalised to a 3-subject-equivalent
+// score. Offer thresholds (see indicativeGrade/offerBand in SearchCourses)
+// are calibrated against three A-levels (BBB, AAB, etc). The form allows
+// submitting with as few as 2 A-levels (a real, common case), but a plain
+// sum of only 2 grades can never reach a 3-subject threshold - even two A*s
+// (24) falls short of the lowest offer band (BBB = 30). That meant every
+// 2-subject search silently returned zero results regardless of grades.
+// FIX: average the best up to 3 grades, then scale to a 3-subject total, so
+// 2 subjects are compared fairly against 3-subject offer bands rather than
+// being mathematically incapable of qualifying for anything. For 3 or more
+// subjects the result is unchanged (average of top 3 * 3 = sum of top 3).
 export function gradeTotal(subjects) {
   const values = (subjects || [])
     .map((s) => GRADE_VALUES[(s.grade || '').toUpperCase()] || 0)
-    .sort((a, b) => b - a);
-  return values.slice(0, 3).reduce((a, b) => a + b, 0);
+    .filter((v) => v > 0)
+    .sort((a, b) => b - a)
+    .slice(0, 3);
+  if (!values.length) return 0;
+  const average = values.reduce((a, b) => a + b, 0) / values.length;
+  return Math.round(average * 3);
 }
 
 // Levenshtein distance (for fuzzy subject matching, threshold <= 2).

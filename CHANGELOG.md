@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-23
 
+### Fixed - students with only 2 A-levels always got zero results
+- Found while directly answering "is this fit for purpose": the search
+  form's own stated minimum is 2 A-levels, but `gradeTotal()` summed
+  whatever grades were given without normalising for count. Offer
+  thresholds are calibrated against 3 A-levels (BBB = 30 points minimum).
+  Two subjects, even two A*s (24 points), could never reach 30 - so anyone
+  with exactly 2 A-levels got zero results regardless of grades, silently.
+- Fixed in `gradeTotal()` (`lambda/shared/shared.mjs`): average the best up
+  to 3 grades, then scale to a 3-subject-equivalent total. For 3+ subjects
+  the result is unchanged (average of top 3, times 3, equals the sum of
+  top 3). For 2 subjects, the average is fairly compared against the same
+  thresholds instead of being mathematically incapable of qualifying.
+- Deployed live (SearchCourses v11) and verified: BB with 2 subjects now
+  correctly matches BBB-threshold universities (20 matches, same result as
+  BBB with 3 subjects); genuinely low 2-subject grades (BC) still
+  correctly return zero, since no seeded university requires less than
+  BBB-equivalent.
+
 ### Security - pen test fixes
 - Ran a non-destructive penetration test against the live infrastructure
   (access control, injection, rate limiting, information disclosure,
