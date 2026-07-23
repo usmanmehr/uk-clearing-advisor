@@ -69,16 +69,37 @@ function courseCard(c) {
   const page = c.clearingPage
     ? `<a href="https://${c.clearingPage.replace(/^https?:\/\//, '')}" target="_blank" rel="noopener">Clearing page</a>` : '';
   const warn = c.subjectWarning ? `<div class="warn">${c.subjectWarning}</div>` : '';
-  const est = c.estimatedData ? ' <span class="badge Amber">Estimated</span>' : '';
+  const est = c.estimatedData ? ' <span class="badge Amber">Indicative offer</span>' : '';
+
+  // Only show figures that are verified. Graduate prospects are per-university
+  // (CUG 2027) where published; salary is the national median for the subject
+  // (HESA), clearly labelled so it is never read as a university-specific wage.
+  const stats = [];
+  if (c.graduateProspects != null) {
+    stats.push(`<div class="stat"><b>${c.graduateProspects}%</b><span>graduate prospects</span></div>`);
+  }
+  if (c.nationalMedianSalary != null) {
+    stats.push(`<div class="stat"><b>${fmtGBP(c.nationalMedianSalary)}</b><span>national median${c.salarySubject ? ' &middot; ' + c.salarySubject : ''}</span></div>`);
+  }
+  stats.push(`<div class="stat"><b>${c.typicalOffer}</b><span>typical offer</span></div>`);
+
+  const sources = [];
+  if (c.nationalMedianSalary != null && c.salarySourceUrl) {
+    sources.push(`<a href="${c.salarySourceUrl}" target="_blank" rel="noopener">Salary: HESA Graduate Outcomes ${c.salaryYear || ''}</a>`);
+  }
+  if (c.graduateProspects != null && c.graduateProspectsSourceUrl) {
+    sources.push(`<a href="${c.graduateProspectsSourceUrl}" target="_blank" rel="noopener">Prospects: ${c.graduateProspectsYear || 'CUG 2027'}</a>`);
+  }
+  const sourceLine = sources.length ? `<div class="sources">Sources: ${sources.join(' &middot; ')}</div>` : '';
+
   return `<article class="course">
     <h3>${c.universityName}</h3>
     <div class="meta">${c.courseTitle}${c.ucasCode ? ` &middot; UCAS ${c.ucasCode}` : ''} &middot; ${c.location} &middot;
       <span class="badge ${badge.colour}">${badge.label}</span>${est}</div>
     <div class="stat-row">
-      <div class="stat"><b>${c.employabilityRate}%</b><span>in work or study (est.)</span></div>
-      <div class="stat"><b>${fmtGBP(c.salary15months)}</b><span>median salary (est.)</span></div>
-      <div class="stat"><b>${c.typicalOffer}</b><span>typical offer</span></div>
+      ${stats.join('\n      ')}
     </div>
+    ${sourceLine}
     ${warn}
     ${c.statusNote ? `<div class="note-line">${c.statusNote}</div>` : ''}
     <div class="contact">Clearing: ${phone} ${page ? '&middot; ' + page : ''}

@@ -173,3 +173,5 @@ button.remove:hover { background: var(--red-bg); }
 }
 
 .note-line { font-size: .8rem; color: var(--muted); font-style: italic; margin: .4rem 0; }
+.sources { font-size: .76rem; color: var(--muted); margin: .1rem 0 .3rem; }
+.sources a { color: var(--navy-2); }

@@ -108,15 +108,6 @@ function validate(body) {
   return null;
 }
 
-// National average across all subjects (used when no course interest given).
-function nationalAllSubjectAverage() {
-  const vals = Object.values(SUBJECT_DEFAULTS_CACHE);
-  if (!vals.length) return { salary15months: 30000, employabilityRate: 80 };
-  const salary = Math.round(vals.reduce((a, d) => a + Number(d.salary15months || 0), 0) / vals.length);
-  const emp = Math.round(vals.reduce((a, d) => a + Number(d.employabilityRate || 0), 0) / vals.length);
-  return { salary15months: salary, employabilityRate: emp };
-}
-
 export const handler = async (event) => {
   const started = Date.now();
   const requestId = event?.requestContext?.requestId || randomUUID();
@@ -196,7 +187,6 @@ export const handler = async (event) => {
     const limit = Math.min(Math.max(parseInt(body.limit, 10) || 10, 1), 50);
 
     // STEP 6/7 - build candidate courses from seeded data (estimated mode).
-    const allAvg = nationalAllSubjectAverage();
     const restrictedSet = resolved ? RESTRICTED_SUBJECTS[resolved] : null;
     const courses = [];
     for (const u of CONTACTS_CACHE) {
@@ -213,8 +203,12 @@ export const handler = async (event) => {
 
       const subjectName = resolved || 'Multiple subjects';
       const defaults = resolved ? SUBJECT_DEFAULTS_CACHE[resolved] : null;
-      const employability = defaults ? Number(defaults.employabilityRate) : allAvg.employabilityRate;
-      const salary = defaults ? Number(defaults.salary15months) : allAvg.salary15months;
+      // Salary is the NATIONAL median for the subject (not university-specific)
+      // and is only shown when a course interest resolves to a known subject.
+      const nationalMedianSalary = defaults ? Number(defaults.salary15months) : null;
+      // Employability is the verified per-university graduate prospects figure
+      // (CUG 2027) where published; otherwise null (never estimated/derived).
+      const graduateProspects = u.graduateProspects != null ? Number(u.graduateProspects) : null;
 
       const gradeNumeric = indicativeGrade(u);
 
@@ -243,8 +237,15 @@ export const handler = async (event) => {
         statusBadge: badge,
         typicalOffer: offerBand(gradeNumeric),
         clearingGradeNumeric: gradeNumeric,
-        employabilityRate: employability,
-        salary15months: salary,
+        graduateProspects,
+        graduateProspectsYear: graduateProspects != null ? 'Complete University Guide 2027' : null,
+        graduateProspectsSource: u.graduateProspectsSource || null,
+        graduateProspectsSourceUrl: u.graduateProspectsSourceUrl || null,
+        nationalMedianSalary,
+        salarySubject: resolved || null,
+        salarySource: defaults ? (defaults.source || null) : null,
+        salarySourceUrl: defaults ? (defaults.salarySourceUrl || null) : null,
+        salaryYear: defaults ? (defaults.salaryYear || null) : null,
         highFliersRank: u.highFliersRank ?? null,
         clearingPhone: u.clearingPhone || null,
         clearingEmail: u.clearingEmail || null,
@@ -261,8 +262,12 @@ export const handler = async (event) => {
 
     // STEP 8 - filter by achievable grade + numeric thresholds.
     let filtered = courses.filter((c) => c.clearingGradeNumeric <= candidateTotal);
-    if (body.minEmployability) filtered = filtered.filter((c) => c.employabilityRate >= body.minEmployability);
-    if (body.minSalary) filtered = filtered.filter((c) => c.salary15months >= body.minSalary);
+    if (body.minEmployability) {
+      filtered = filtered.filter((c) => c.graduateProspects != null && c.graduateProspects >= body.minEmployability);
+    }
+    if (body.minSalary) {
+      filtered = filtered.filter((c) => c.nationalMedianSalary != null && c.nationalMedianSalary >= body.minSalary);
+    }
 
     const ranked = rankCourses(filtered, priority);
     const results = ranked.slice(0, limit);
@@ -318,7 +323,7 @@ export const handler = async (event) => {
       dataFreshness: new Date().toISOString(),
       usingCachedData: false,
       estimatedData: true,
-      notice: 'Estimated data. Live UCAS clearing vacancies are confirmed by phone on Results Day (Thursday 13 August 2026).',
+      notice: 'Salary shown is the national median for the subject (HESA Graduate Outcomes 2022/23), not a university-specific figure. Graduate prospects, where shown, are from the Complete University Guide 2027. Live UCAS clearing vacancies are confirmed by phone on Results Day (Thursday 13 August 2026).',
     });
   } catch (e) {
     log('ERROR', { level: 'ERROR', msg: 'search failed', requestId, error: e.message, stack: e.stack });
@@ -330,11 +335,18 @@ export const handler = async (event) => {
 // Normalise each metric 0..1 across the result set, then weight by priority.
 function rankCourses(courses, priority) {
   if (!courses.length) return courses;
-  const salaries = courses.map((c) => c.salary15months);
-  const emps = courses.map((c) => c.employabilityRate);
-  const minS = Math.min(...salaries), maxS = Math.max(...salaries);
-  const minE = Math.min(...emps), maxE = Math.max(...emps);
+  // Salary is a national subject median (identical across universities for a
+  // given subject) and graduate prospects are only present for some
+  // universities, so both are null-safe and default to a neutral 0.5.
+  const salaries = courses.map((c) => c.nationalMedianSalary).filter((v) => v != null);
+  const emps = courses.map((c) => c.graduateProspects).filter((v) => v != null);
+  const minS = salaries.length ? Math.min(...salaries) : 0;
+  const maxS = salaries.length ? Math.max(...salaries) : 0;
+  const minE = emps.length ? Math.min(...emps) : 0;
+  const maxE = emps.length ? Math.max(...emps) : 0;
   const norm = (v, lo, hi) => (hi === lo ? 0.5 : (v - lo) / (hi - lo));
+  const salaryScore = (c) => (c.nationalMedianSalary == null ? 0.5 : norm(c.nationalMedianSalary, minS, maxS));
+  const empScore = (c) => (c.graduateProspects == null ? 0.5 : norm(c.graduateProspects, minE, maxE));
   // Ranking dimension: use highFliersRank where present (1 -> 1.0), else 0.5.
   const rankScore = (c) => (c.highFliersRank ? Math.max(0, 1 - (c.highFliersRank - 1) / 30) : 0.5);
 
@@ -347,8 +359,8 @@ function rankCourses(courses, priority) {
 
   for (const c of courses) {
     c.score = Number((
-      weights.s * norm(c.salary15months, minS, maxS) +
-      weights.e * norm(c.employabilityRate, minE, maxE) +
+      weights.s * salaryScore(c) +
+      weights.e * empScore(c) +
       weights.r * rankScore(c)
     ).toFixed(4));
   }

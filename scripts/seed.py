@@ -82,8 +82,31 @@ CONTACT_FIELDS = ["providerCode","universityName","ucasInstitutionCode","region"
                   "clearingEmail","clearingPage","hotlineOpens","clearingStatus",
                   "accommodationGuarantee","notes"]
 
-# National subject averages (Section 3). source string shared.
-DEFAULTS_SOURCE = "HESA Graduate Outcomes 2022/23; Prospects Luminate Nov 2025"
+# National subject medians (salary at 15 months post-graduation) and national
+# subject-level employability. These are NOT university-specific figures - they
+# are national medians for the subject and must be labelled as such in the UI.
+DEFAULTS_SOURCE = "HESA Graduate Outcomes 2022/23 (Prospects Luminate, Nov 2025)"
+DEFAULTS_SOURCE_URL = "https://luminate.prospects.ac.uk/how-graduate-salaries-vary-by-degree-subject"
+DEFAULTS_YEAR = "2022/23"
+
+# Verified per-university graduate prospects: % in skilled employment or
+# further study within 15 months. Source: Complete University Guide 2027,
+# published 2 June 2026. Only these universities have a verified figure; every
+# other university is left unset rather than showing an estimated/derived value.
+GRAD_PROSPECTS_SOURCE = "Complete University Guide 2027 (Graduate Prospects), published 2 June 2026"
+GRAD_PROSPECTS_URL = "https://www.thecompleteuniversityguide.co.uk/league-tables/rankings"
+GRADUATE_PROSPECTS = {
+    "0009": 89,  # University of Bath
+    "0086": 89,  # London School of Economics
+    "0137": 85,  # University of Warwick
+    "0072": 85,  # King's College London
+    "0044": 84,  # University of Exeter
+    "0038": 83,  # Durham University
+    "0042": 83,  # University of Edinburgh
+    "0094": 80,  # University of Manchester
+    "0077": 80,  # University of Leeds
+    "0115": 70,  # Queen Mary University of London
+}
 SUBJECT_DEFAULTS = {
     "Economics": (35750, 85), "Economics and Finance": (35750, 85),
     "Software Engineering": (33500, 82), "Computer Science": (33000, 82),
@@ -91,7 +114,7 @@ SUBJECT_DEFAULTS = {
     "Mathematics": (34710, 83), "MORSE": (34710, 83),
     "Actuarial Science": (30000, 85),
     "Finance": (30505, 80), "Accounting and Finance": (30505, 80),
-    "Business": (30000, 80), "Management": (30000, 80), "Marketing": (30000, 80),
+    "Business": (30190, 80), "Management": (30190, 80), "Marketing": (30000, 80),
     "Law": (26500, 78), "Criminology": (26500, 78),
     "Psychology": (26485, 79),
     "History": (28320, 77), "Classics": (28320, 77),
@@ -141,6 +164,11 @@ def contact_item(row):
         item["clearingEmail"] = s(d["clearingEmail"])
     if d["notes"]:
         item["notes"] = s(d["notes"])
+    gp = GRADUATE_PROSPECTS.get(d["providerCode"])
+    if gp is not None:
+        item["graduateProspects"] = {"N": str(gp)}
+        item["graduateProspectsSource"] = s(GRAD_PROSPECTS_SOURCE)
+        item["graduateProspectsSourceUrl"] = s(GRAD_PROSPECTS_URL)
     return item
 
 
@@ -150,6 +178,8 @@ def default_item(subject, salary, emp):
         "salary15months": {"N": str(salary)},
         "employabilityRate": {"N": str(emp)},
         "source": s(DEFAULTS_SOURCE),
+        "salarySourceUrl": s(DEFAULTS_SOURCE_URL),
+        "salaryYear": s(DEFAULTS_YEAR),
     }
 
 
