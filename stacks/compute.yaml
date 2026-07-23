@@ -253,7 +253,7 @@ Resources:
       TracingConfig: { Mode: Active }
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/SearchCourses-v4.zip
+        S3Key: lambda/SearchCourses-v7.zip
       Environment:
         Variables:
           CONTACTS_TABLE: !Ref ContactsTable
@@ -267,6 +267,10 @@ Resources:
           LOG_LEVEL: !Ref LogLevel
 
   # Published version + alias so provisioned concurrency can serve API traffic.
+  # NOTE: code has been hotfixed directly via the CLI a few times (accuracy
+  # fixes, no-caching, search-insight logging) between IaC deploys. The S3Key
+  # above and this Version resource are kept in sync with the live alias so
+  # the next `cloudformation deploy` reconciles rather than reverts state.
   SearchCoursesVersionV4:
     Type: AWS::Lambda::Version
     Properties:

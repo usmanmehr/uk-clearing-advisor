@@ -8,10 +8,12 @@ Parameters:
   ComputeStackName: { Type: String, Default: uk-clearing-advisor-compute }
   AllowOrigin:
     Type: String
-    Default: '*'
+    Default: 'https://REPLACE_APP_CLOUDFRONT_DOMAIN'
     Description: >
-      CORS allowed origin. Defaults to '*' for initial testing; set to the
-      CloudFront domain (https://xxxx.cloudfront.net) once the CDN stack exists.
+      CORS allowed origin. Must be the CloudFront domain
+      (https://xxxx.cloudfront.net) from the cdn stack, not '*' - the API is
+      also reachable directly via its execute-api URL, so a permissive CORS
+      value would let any website call /search cross-origin.
   ThrottleBurst: { Type: Number, Default: 100 }
   ThrottleRate: { Type: Number, Default: 50 }
 

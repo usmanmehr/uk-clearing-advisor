@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-23
 
+### Fixed - Well-Architected review follow-up
+- **Security**: API Gateway CORS was still `AllowOrigins: ["*"]` in production,
+  even though the CloudFront app domain has existed since launch. Since the
+  API is also reachable directly via its `execute-api` URL, this allowed any
+  website to call `/search` cross-origin. Locked `AllowOrigin` to the live
+  CloudFront domain in `stacks/api.yaml` and redeployed; verified via a CORS
+  preflight request that only the app's own origin is now allowed.
+- **Operational Excellence**: `stacks/compute.yaml` had drifted from the live
+  `SearchCourses` Lambda - several hotfixes this session (outcome-data
+  accuracy, no-caching, search-insight logging) were deployed directly via
+  the CLI and were not reflected in the template's `S3Key`/version. Bumped
+  the template to reference the current code (`SearchCourses-v7.zip`) so a
+  future `cloudformation deploy` reconciles state instead of reverting it.
+  Verified the `live` alias still resolves to the same running code after
+  the reconciling deploy.
+
 ### Added
 - Grafana now surfaces what students are actually searching for, not just
   where they are searching from. `SearchCourses` logs a structured
