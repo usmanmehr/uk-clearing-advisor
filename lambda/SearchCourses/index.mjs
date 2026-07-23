@@ -305,10 +305,19 @@ export const handler = async (event) => {
       putMetric('PrioritySelected', 1, 'Count', [{ Name: 'Priority', Value: priority }]),
     ]);
 
+    // Human-readable "Subject:Grade" list (e.g. "Mathematics:A, Physics:A,
+    // History:B") so Grafana can show what students are actually entering,
+    // not just the numeric grade total.
+    const subjectsEntered = body.subjects
+      .map((s) => `${(s.subject || '').trim()}:${(s.grade || '').toUpperCase()}`)
+      .join(', ');
+
     log('INFO', {
       level: 'INFO', msg: 'search', requestId, sourceIp: maskedIp,
       courseInterest: resolved || 'unspecified', subjectCount: body.subjects.length,
-      gradeTotal: candidateTotal, cacheHit: false, totalLatencyMs,
+      subjectsEntered, gradeTotal: candidateTotal,
+      priority, locationFilter: body.location || 'any', russellGroupOnly: !!body.russellGroupOnly,
+      cacheHit: false, totalLatencyMs,
       resultsCount: results.length, usingFallback: true, environment: ENVIRONMENT,
       geoCountry: geo.geoCountry, geoRegion: geo.geoRegion, geoCity: geo.geoCity,
       geoLat: geo.geoLat, geoLon: geo.geoLon, device: geo.device, userAgent: geo.userAgent,

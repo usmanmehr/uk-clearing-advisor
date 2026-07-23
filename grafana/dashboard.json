@@ -353,6 +353,143 @@
           }
         }
       ]
+    },
+    {
+      "id": 9,
+      "title": "Top course interests",
+      "type": "barchart",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 44
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "eu-west-2",
+          "logGroupNames": [
+            "/aws/lambda/ClearingAdvisor-SearchCourses"
+          ],
+          "expression": "filter msg = 'search' and courseInterest != 'unspecified' | stats count(*) as searches by courseInterest | sort searches desc | limit 20",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-BlPu"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "title": "What people are searching for, by region",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 44
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "eu-west-2",
+          "logGroupNames": [
+            "/aws/lambda/ClearingAdvisor-SearchCourses"
+          ],
+          "expression": "filter msg = 'search' and courseInterest != 'unspecified' and ispresent(geoRegion) | stats count(*) as searches by geoRegion, courseInterest | sort searches desc | limit 50",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "A-level subjects and grades entered",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 52
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "eu-west-2",
+          "logGroupNames": [
+            "/aws/lambda/ClearingAdvisor-SearchCourses"
+          ],
+          "expression": "filter msg = 'search' and ispresent(subjectsEntered) | stats count(*) as searches by subjectsEntered | sort searches desc | limit 25",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Average grade points by region",
+      "type": "barchart",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 52
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "eu-west-2",
+          "logGroupNames": [
+            "/aws/lambda/ClearingAdvisor-SearchCourses"
+          ],
+          "expression": "filter msg = 'search' and ispresent(geoRegion) and ispresent(gradeTotal) | stats avg(gradeTotal) as avgGradePoints by geoRegion | sort avgGradePoints desc",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      }
     }
   ],
   "refresh": "1m"

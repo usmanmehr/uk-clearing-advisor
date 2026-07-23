@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-23
 
+### Added
+- Grafana now surfaces what students are actually searching for, not just
+  where they are searching from. `SearchCourses` logs a structured
+  `subjectsEntered` field (e.g. `Mathematics:A, Physics:A, Chemistry:B`)
+  plus the selected sort priority, location filter and Russell-Group-only
+  flag on every search.
+- Four new dashboard panels in `grafana/dashboard.json`:
+  - **Top course interests** - most-searched subjects/courses.
+  - **What people are searching for, by region** - course interest
+    cross-tabulated with UK region, so you can see, for example, that
+    Manchester searches skew towards Computer Science.
+  - **A-level subjects and grades entered** - the actual subject/grade
+    combinations students are typing in.
+  - **Average grade points by region** - typical predicted/achieved
+    grades by UK region.
+  - Deployed to the live Grafana instance and verified end-to-end with a
+    live search (Manchester, Computer Science, Maths A / Physics A /
+    Chemistry B) confirmed flowing through to the new log fields.
+
 ### Removed
 - All response caching removed from the API and frontend. Clearing status,
   hotline hours and outcome data can change within the hour on Results Day,
