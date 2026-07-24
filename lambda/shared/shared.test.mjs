@@ -15,7 +15,13 @@
 //      real, external source.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GRADE_VALUES, gradeTotal } from './shared.mjs';
+// Imported from grading.mjs directly (not shared.mjs) - shared.mjs pulls in
+// @aws-sdk/* packages which only exist inside the Lambda runtime and are
+// never `npm install`ed in this project, so importing shared.mjs in plain
+// CI (GitHub Actions ubuntu-latest, no npm install step) throws
+// ERR_MODULE_NOT_FOUND before a single test runs. grading.mjs has zero
+// imports so it works everywhere.
+import { GRADE_VALUES, gradeTotal } from './grading.mjs';
 
 test('GRADE_VALUES match verified UCAS Tariff points (Pearson, 2025/26 AAQs)', () => {
   assert.equal(GRADE_VALUES['A*'], 56);
