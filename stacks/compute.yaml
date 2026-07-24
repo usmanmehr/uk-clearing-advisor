@@ -275,6 +275,40 @@ Resources:
                 Action: ['dynamodb:GetItem']
                 Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ContactsTable}'
 
+  # EventBridge Scheduler (not a classic Events::Rule) invokes targets via an
+  # assumed IAM role rather than a resource-based Lambda permission, and
+  # supports a real StartDate/EndDate - which is why this is used for the
+  # pre-Results-Day scraper ramp-up below instead of a cron() rule (a cron
+  # rule has no native end date and would run forever until disabled by
+  # hand).
+  RampUpScraperSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: sts:AssumeRole
+            # Confused-deputy hardening (AWS-recommended): only schedules in
+            # this account's default schedule group may assume this role.
+            # Scoped to the schedule GROUP, not the individual schedule ARN,
+            # to avoid a circular dependency between this role and the
+            # schedule resource that references it.
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref 'AWS::AccountId'
+              ArnLike:
+                'aws:SourceArn': !Sub 'arn:aws:scheduler:${AWS::Region}:${AWS::AccountId}:schedule-group/default'
+      Policies:
+        - PolicyName: invoke-scraper
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['lambda:InvokeFunction']
+                Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:ClearingAdvisor-DailyScraper'
+
   # ---------------- Lambda functions ----------------
   SearchCoursesFunction:
     Type: AWS::Lambda::Function
@@ -507,6 +541,34 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt ResultsDayScraperSchedule.Arn
+
+  # Pre-Results-Day ramp-up: same DailyScraperFunction, run every hour from
+  # now until 12 Aug 2026 (the day before Results Day), when the 15-minute
+  # ResultsDayScraperSchedule above takes over on 13 Aug. Bounded with a
+  # real EndDate (EventBridge Scheduler, not a cron() rule) so it stops
+  # automatically and never needs manual disabling. No code change to
+  # DailyScraper - it's idempotent, so a higher frequency only narrows the
+  # detection window.
+  # NOTE: hourly x 44 universities over ~3 weeks is a real, sustained load
+  # on other institutions' clearing pages (order of tens of thousands of
+  # requests total) - flagged as worth reconsidering if any university
+  # starts rate-limiting or blocking the scraper's User-Agent.
+  RampUpScraperSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: ClearingAdvisor-RampUpScraper
+      Description: >-
+        Hourly DailyScraper runs from creation until 12 Aug 2026 23:59 UTC,
+        ramping up detection frequency ahead of Results Day (13 Aug, when
+        ResultsDayScraperSchedule takes over at 15-minute frequency).
+      ScheduleExpression: 'rate(1 hour)'
+      ScheduleExpressionTimezone: UTC
+      EndDate: '2026-08-12T23:59:00.000Z'
+      FlexibleTimeWindow: { Mode: 'OFF' }
+      State: ENABLED
+      Target:
+        Arn: !GetAtt DailyScraperFunction.Arn
+        RoleArn: !GetAtt RampUpScraperSchedulerRole.Arn
 
   # WarmUp on Results Day (13 Aug 2026) at 05:00 UTC = 06:00 BST.
   WarmUpSchedule:

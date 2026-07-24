@@ -4,6 +4,40 @@ All notable changes to UK Clearing Advisor are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## 2026-07-24
+
+### Added - hourly scraper ramp-up ahead of Results Day
+- The 15-minute Results Day rule (`ClearingAdvisor-ResultsDayScraper`)
+  only fires on 13 Aug 2026 itself. The ~3 weeks beforehand (24 Jul-12 Aug)
+  were still only checked once a day at 07:00 UTC, even though universities
+  can and do update Clearing pages ahead of Results Day.
+- Added `ClearingAdvisor-RampUpScraper`, a new `AWS::Scheduler::Schedule`
+  (Amazon EventBridge Scheduler, not the classic `AWS::Events::Rule` cron
+  used elsewhere in this stack) that runs the same `DailyScraper` function
+  every hour, bounded by a real `EndDate` of 2026-08-12T23:59:00Z so it
+  stops automatically the day before Results Day - no manual disabling
+  needed, and it can never run forever by accident. A classic cron rule
+  has no native end date, which is why Scheduler was used here instead.
+- Added `RampUpScraperSchedulerRole`, a dedicated IAM role assumed by
+  `scheduler.amazonaws.com` to invoke `DailyScraper`, with a
+  confused-deputy hardening condition (`aws:SourceAccount` +
+  `aws:SourceArn` scoped to the `default` schedule group, per AWS's
+  documented guidance) restricting which schedules may assume it.
+- Neither existing schedule was touched: `DailyScraperSchedule` (07:00 UTC,
+  year-round) and `ResultsDayScraperSchedule` (15-minute, 13 Aug only)
+  are unchanged. No code change to `DailyScraper` itself - same reasoning
+  as the Results Day rule: it's idempotent, so a higher check frequency
+  only narrows the detection window.
+- Verified live via `scheduler get-schedule`: `State=ENABLED`,
+  `ScheduleExpression=rate(1 hour)`, `EndDate=2026-08-12T23:59:00+00:00`,
+  target is `ClearingAdvisor-DailyScraper` via the new scheduler role.
+  Confirmed both pre-existing rules are still `ENABLED` with their original
+  schedule expressions after the deploy.
+- Flagged, not acted on: hourly checks across 44 universities for ~3 weeks
+  is a real, sustained volume of outbound requests to other institutions'
+  servers (tens of thousands of requests total). Worth revisiting if any
+  university's Clearing page starts rate-limiting or blocking the scraper.
+
 ## 2026-07-23
 
 ### Changed - architecture diagram brought up to date
