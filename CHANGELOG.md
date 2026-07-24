@@ -7,12 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## 2026-07-24
 
 ### Added - cost dashboard (tag-based, in the existing Grafana)
-- Wanted the infrastructure cost visible on a dashboard. Account
-  859885015004 is not dedicated to this app - it also runs unrelated
-  stacks (master-infrastructure, business-hours-ec2-test, Garden Portal,
-  etc.) - so account-level billing (e.g. the `AWS/Billing` CloudWatch
-  metric) would be meaningless for "cost of this app" without isolating
-  it first.
+- Wanted the infrastructure cost visible on a dashboard. This AWS
+  account is not dedicated to this app - it also runs other unrelated
+  stacks/workloads - so account-level billing (e.g. the `AWS/Billing`
+  CloudWatch metric) would be meaningless for "cost of this app" without
+  isolating it first.
 - Tagged every resource in all 9 `uk-clearing-advisor-*` CloudFormation
   stacks (7 in eu-west-2, plus `grafana-front` and `waf` in us-east-1,
   since CLOUDFRONT-scope WAF resources are us-east-1-only) with

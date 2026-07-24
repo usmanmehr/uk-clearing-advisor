@@ -1,8 +1,8 @@
 // UK Clearing Advisor - CostReporter (EventBridge, daily).
-// The account (859885015004) is not dedicated to this app - it also runs
-// unrelated stacks (master-infrastructure, business-hours-ec2-test, Garden
-// Portal, etc.), so account-level billing is meaningless for "cost of this
-// app". Every resource in every uk-clearing-advisor-* stack was tagged
+// This AWS account is not dedicated to this app - it also runs other
+// unrelated stacks/workloads, so account-level billing is meaningless for
+// "cost of this app". Every resource in every uk-clearing-advisor-* stack
+// was tagged
 // Application=uk-clearing-advisor (cascaded via stack-level Tags) and that
 // tag was activated as a Cost Allocation Tag, so Cost Explorer can now
 // isolate this app's spend specifically.
