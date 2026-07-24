@@ -81,6 +81,12 @@ Resources:
     Properties:
       LogGroupName: /aws/lambda/ClearingAdvisor-Health
       RetentionInDays: 7
+  CostReporterLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: /aws/lambda/ClearingAdvisor-CostReporter
+      RetentionInDays: 14
 
   # ---------------- IAM roles (least privilege) ----------------
   SearchCoursesRole:
@@ -274,6 +280,35 @@ Resources:
               - Effect: Allow
                 Action: ['dynamodb:GetItem']
                 Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ContactsTable}'
+
+  CostReporterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: cost-explorer-read
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # ce:GetCostAndUsage is a read-only, account-scoped Cost
+              # Explorer API - it does not support resource-level ARNs, so
+              # Resource: '*' is required here (there is nothing narrower to
+              # scope to). Read-only and non-destructive.
+              - Effect: Allow
+                Action: ['ce:GetCostAndUsage']
+                Resource: '*'
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals: { 'cloudwatch:namespace': ClearingAdvisor }
 
   # EventBridge Scheduler (not a classic Events::Rule) invokes targets via an
   # assumed IAM role rather than a resource-based Lambda permission, and
@@ -494,6 +529,31 @@ Resources:
         Variables:
           CONTACTS_TABLE: !Ref ContactsTable
 
+  # Cost dashboard support: reads yesterday's spend (Application=uk-clearing-
+  # advisor cost allocation tag) from Cost Explorer and publishes it as a
+  # CloudWatch metric so it can sit in Grafana next to the operational
+  # panels. See lambda/CostReporter/index.mjs for the full reasoning - this
+  # account also runs unrelated workloads, so account-level billing alone
+  # would be meaningless.
+  CostReporterFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: CostReporterLogGroup
+    Properties:
+      FunctionName: ClearingAdvisor-CostReporter
+      Runtime: nodejs22.x
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 30
+      Role: !GetAtt CostReporterRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactsBucket
+        S3Key: lambda/CostReporter-v1.zip
+      Environment:
+        Variables:
+          METRICS_NAMESPACE: ClearingAdvisor
+          COST_TAG_KEY: Application
+          COST_TAG_VALUE: uk-clearing-advisor
+
   # Daily scraper at 07:00 UTC (year-round cadence, unchanged).
   DailyScraperSchedule:
     Type: AWS::Events::Rule
@@ -587,6 +647,27 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt WarmUpSchedule.Arn
+
+  # CostReporter daily at 06:00 UTC - after Cost Explorer's data for the
+  # previous day is reliably available (it typically lags ~24h, sometimes
+  # updating a few times during the day, so running just after midnight
+  # would risk reading an incomplete number).
+  CostReporterSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: ClearingAdvisor-CostReporter
+      ScheduleExpression: 'cron(0 6 * * ? *)'
+      State: ENABLED
+      Targets:
+        - Id: CostReporter
+          Arn: !GetAtt CostReporterFunction.Arn
+  CostReporterInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CostReporterFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CostReporterSchedule.Arn
 
 Outputs:
   SearchCoursesArn: { Value: !GetAtt SearchCoursesFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-SearchCoursesArn' } }

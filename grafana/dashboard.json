@@ -490,6 +490,91 @@
         },
         "overrides": []
       }
+    },
+    {
+      "id": 13,
+      "title": "Estimated daily cost (USD) - yesterday",
+      "type": "stat",
+      "description": "From ce:GetCostAndUsage, filtered to Application=uk-clearing-advisor cost allocation tag (this account also runs unrelated workloads, so account-level billing would be meaningless here). Published daily by the CostReporter Lambda. Cost Explorer data lags ~24h, so this always reflects yesterday, not today.",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 60
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "ClearingAdvisor",
+          "metricName": "DailyCostUSD",
+          "statistic": "Maximum",
+          "period": "86400",
+          "matchExact": true,
+          "dimensions": {},
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "title": "Daily cost over time (USD)",
+      "type": "timeseries",
+      "description": "Application=uk-clearing-advisor tag-filtered spend, one point per day. Widen the dashboard time range beyond the default 24h to see the trend.",
+      "timeFrom": "30d",
+      "gridPos": {
+        "h": 6,
+        "w": 18,
+        "x": 6,
+        "y": 60
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "ClearingAdvisor",
+          "metricName": "DailyCostUSD",
+          "statistic": "Maximum",
+          "period": "86400",
+          "matchExact": true,
+          "dimensions": {},
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      }
     }
   ],
   "refresh": "1m"

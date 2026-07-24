@@ -13,7 +13,10 @@ FUNCTIONS = ["SearchCourses", "GetSubjects", "GetUniversities", "GetScholarships
 # Health is standalone (no shared.mjs dependency - deliberately does not use
 # checkOriginSecret, see lambda/Health/index.mjs for why), so it is zipped
 # without shared.mjs rather than via the FUNCTIONS loop.
-STANDALONE_FUNCTIONS = ["Health"]
+# CostReporter is also standalone - it's not API-facing (EventBridge-only,
+# like WarmUp/ScheduleManager) and only needs the Cost Explorer + CloudWatch
+# SDK clients, no shared.mjs helpers.
+STANDALONE_FUNCTIONS = ["Health", "CostReporter"]
 
 
 def build():

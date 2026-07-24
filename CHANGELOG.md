@@ -6,6 +6,60 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-24
 
+### Added - cost dashboard (tag-based, in the existing Grafana)
+- Wanted the infrastructure cost visible on a dashboard. Account
+  859885015004 is not dedicated to this app - it also runs unrelated
+  stacks (master-infrastructure, business-hours-ec2-test, Garden Portal,
+  etc.) - so account-level billing (e.g. the `AWS/Billing` CloudWatch
+  metric) would be meaningless for "cost of this app" without isolating
+  it first.
+- Tagged every resource in all 9 `uk-clearing-advisor-*` CloudFormation
+  stacks (7 in eu-west-2, plus `grafana-front` and `waf` in us-east-1,
+  since CLOUDFRONT-scope WAF resources are us-east-1-only) with
+  `Application=uk-clearing-advisor` / `Environment=production` via
+  stack-level `Tags`, which cascades to every taggable resource
+  automatically - no per-resource template edits needed. Verified the tag
+  actually landed on a real resource (`ClearingAdvisor-DailyScraper`'s
+  Lambda tags), not just at the stack level.
+- Activated `Application` as a Cost Allocation Tag
+  (`ce:UpdateCostAllocationTagsStatus`) so Cost Explorer can filter to
+  just this app's spend. Note: AWS can take up to 24h to backfill a
+  newly-activated tag into Cost Explorer's queryable data - the dashboard
+  will read `0` until that propagation finishes.
+- Added `ClearingAdvisor-CostReporter`, a small daily Lambda
+  (`cron(0 6 * * ? *)`, after Cost Explorer's own ~24h reporting lag)
+  that calls `ce:GetCostAndUsage` filtered to that tag for the previous
+  day and publishes the result as a CloudWatch metric
+  (`ClearingAdvisor/DailyCostUSD`). `ce:GetCostAndUsage` doesn't support
+  resource-level IAM scoping, so its policy is necessarily `Resource: '*'`
+  (documented in the template) - it's read-only.
+- Added two panels to the existing `grafana/dashboard.json` (already
+  deployed on this project's own Grafana-on-EC2, which already had a
+  CloudWatch datasource provisioned - no new datasource, plugin, or
+  separate Grafana instance needed): a stat panel for yesterday's cost
+  and a 30-day trend, both reading `DailyCostUSD`. Deployed the updated
+  dashboard to the live instance via S3 sync + SSM `RunShellScript`
+  (`AWS-RunShellScript` document) rather than SSH, matching the existing
+  admin-access pattern (the instance only allows SSM Session Manager and
+  a locked-down HTTPS CIDR, no open SSH).
+- Fixed a self-inflicted delay found while testing: the metric was
+  initially timestamped with the cost period's own date (yesterday)
+  rather than "now" (publish time). CloudWatch can take up to 48h to
+  make a data point queryable once its timestamp is more than 24h old -
+  backdating it would have added ~2 extra days on top of Cost Explorer's
+  own lag for no reason. Fixed to timestamp "now" while the *value*
+  still reflects yesterday's spend; verified via a manual `put-metric-
+  data` test with each timestamp style that this was the actual cause
+  before changing the code.
+- Verified live: `CostReporterFunction` invokes successfully (Cost
+  Explorer's `client-cost-explorer` SDK package is bundled in the
+  Node.js 22 Lambda runtime - confirmed by invoking directly rather than
+  assuming), publishes to `ClearingAdvisor/DailyCostUSD`, and the metric
+  is queryable via `cloudwatch get-metric-statistics` within about a
+  minute of publish. Account-wide (untagged) Cost Explorer confirmed real
+  spend exists for the same day, ruling out a query-construction bug as
+  the reason the tag-filtered number currently reads 0.
+
 ### Added - hourly scraper ramp-up ahead of Results Day
 - The 15-minute Results Day rule (`ClearingAdvisor-ResultsDayScraper`)
   only fires on 13 Aug 2026 itself. The ~3 weeks beforehand (24 Jul-12 Aug)
