@@ -41,12 +41,15 @@ digraph UKClearingAdvisor {
     label="Automation & observability  [stacks: scaling, observability, compute (eu-west-2)]";
     labelloc="t"; margin=24;
     style="rounded,filled"; fillcolor="#EDEFF4"; color="#1F3864";
-    EBS  [label="EventBridge  [scaling/compute]\nScaleUp cron(0 4 13 8 ? 2026)\nScaleDown cron(0 20 13 8 ? 2026)\nDailyScraper cron(0 7 * * ? *)\nResultsDayScraper cron(0/15 4-20 13 8 ? 2026)\nWarmUp cron(0 5 13 8 ? 2026)"];
+    EBS  [label="EventBridge Rules  [scaling/compute]\nScaleUp cron(0 4 13 8 ? 2026)\nScaleDown cron(0 20 13 8 ? 2026)\nDailyScraper cron(0 7 * * ? *)\nResultsDayScraper cron(0/15 4-20 13 8 ? 2026)\nWarmUp cron(0 5 13 8 ? 2026)\nCostReporter cron(0 6 * * ? *)"];
+    SCHR [label="EventBridge Scheduler  [compute]\nClearingAdvisor-RampUpScraper\nrate(1 hour) | EndDate 2026-08-12\nreal end date (Scheduler, not cron()) so it\nstops automatically before ResultsDayScraper", fillcolor="#FBE5E1"];
     SCHED [label="Lambda ScheduleManager  [scaling]\nPEAK=100 | UP 400/800 | BASE 50/100", fillcolor="#DDEBF7"];
     DS   [label="Lambda DailyScraper  [compute]\n512MB/300s, global fetch\ntightened open/closed-phrase heuristic\nwrites possibleStatusChange+lastAutomatedCheck", fillcolor="#DDEBF7"];
     WU   [label="Lambda WarmUp  [compute]\ninvokes SearchCourses __WARMUP__", fillcolor="#DDEBF7"];
+    CR   [label="Lambda CostReporter  [compute]\n128MB/30s\ntag-filtered ce:GetCostAndUsage\npublishes ClearingAdvisor/DailyCostUSD", fillcolor="#DDEBF7"];
     CW   [label="CloudWatch  [observability]\nns ClearingAdvisor | Logs Insights\n8 alarms (incl. SearchDuration p99) | dashboards:\nOperations, ResultsDay", fillcolor="#FCE4D6"];
     SNS  [label="SNS ClearingAdvisorAlerts  [observability]\nemail: your-email@example.com", fillcolor="#FCE4D6"];
+    CE   [label="Cost Explorer (billing API)\nce:GetCostAndUsage\nfilter tag Application=uk-clearing-advisor\n(all 9 stacks tagged; account also runs\nunrelated workloads, so untagged totals\nwould be meaningless)", shape=cds, fillcolor="#FFF2CC"];
   }
 
   /* ---------- Grafana analytics ---------- */
@@ -72,13 +75,16 @@ digraph UKClearingAdvisor {
   ART  -> SC   [label="code (S3)", style=dashed, dir=none];
 
   /* ---------- Flows: automation ---------- */
-  EBS   -> SCHED; EBS -> DS; EBS -> WU;
+  EBS   -> SCHED; EBS -> DS; EBS -> WU; EBS -> CR;
+  SCHR  -> DS    [label="invoke (hourly, 24 Jul-12 Aug)"];
   SCHED -> SC    [label="PutProvisionedConcurrency(100)"];
   SCHED -> APIGW [label="UpdateStage throttle 400/800"];
   WU    -> SC    [label="warm invoke"];
   DS    -> DDB   [label="scan+update Contacts, write ChangeLog"];
   SC    -> CW    [label="PutMetricData + logs\n(geo, device, UA)"];
   GE -> CW; DS -> CW;
+  CR    -> CE    [label="GetCostAndUsage (yesterday, tag-filtered)"];
+  CR    -> CW    [label="PutMetricData DailyCostUSD"];
   CW    -> SNS   [label="alarm actions"];
 
   /* ---------- Flows: grafana ---------- */
