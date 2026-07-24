@@ -4,6 +4,10 @@ Account REPLACE_ACCOUNT_ID. Region eu-west-2 (London); WAF/CloudFront are global
 control plane in us-east-1. Two subsystems: the public application and the
 Grafana analytics, both geo-restricted to the UK.
 
+First-time deploy: use `./deploy.sh` (see [DEPLOY.md](DEPLOY.md)). This
+document is a developer reference for the stack inventory and for changing
+individual pieces once deployed, not a deployment guide.
+
 ## Diagram (Mermaid)
 
 ```mermaid

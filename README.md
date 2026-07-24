@@ -25,37 +25,33 @@ See [CHANGELOG.md](CHANGELOG.md) for what's changed between releases.
 - Grafana dashboard (UK visitor map, region/city/device breakdown, security).
 
 ## Quickstart - deploy your own
-You deploy into your **own** AWS account; all account-specific values are
-placeholders you supply.
+You deploy into your **own** AWS account. One script handles the whole
+sequence (artifacts bucket, Lambda packaging, DynamoDB seed, and all the
+stacks in the right order):
 
 ```bash
-REGION=eu-west-2
-ACCT=$(aws sts get-caller-identity --query Account --output text)
-ART=uk-clearing-advisor-artifacts-$ACCT
-
-# 1. Artifacts bucket + Lambda zips
-aws s3 mb s3://$ART --region $REGION
-python3 scripts/build_lambdas.py
-for f in build/*.zip; do aws s3 cp "$f" s3://$ART/lambda/ --region $REGION; done
-
-# 2. Data + seed, then compute + API
-aws cloudformation deploy --template-file stacks/data.yaml \
-  --stack-name uk-clearing-advisor-data --region $REGION
-python3 scripts/seed.py
-aws cloudformation deploy --template-file stacks/compute.yaml \
-  --stack-name uk-clearing-advisor-compute --region $REGION \
-  --capabilities CAPABILITY_IAM --parameter-overrides ArtifactsBucket=$ART
-aws cloudformation deploy --template-file stacks/api.yaml \
-  --stack-name uk-clearing-advisor-api --region $REGION
+git clone https://github.com/usmanmehr/uk-clearing-advisor.git
+cd uk-clearing-advisor
+./deploy.sh
 ```
 
-That gets the API working. Add the edge, UI and extras (WAF, CDN, frontend,
-observability, scaling, Grafana) using the full sequence in "Deploy" below.
-Minimum you must supply: unique bucket names, `AdminEmail`, and (for Grafana)
-`VpcId` / `SubnetId` / `AllowedCidr`.
+That deploys the core site + API. To also get monitoring, Results-Day
+scaling, and the Grafana analytics dashboard:
+
+```bash
+export ADMIN_EMAIL=you@example.com
+export GRAFANA_VPC_ID=vpc-xxxxxxxx
+export GRAFANA_SUBNET_ID=subnet-xxxxxxxx
+export GRAFANA_ALLOWED_CIDR=203.0.113.4/32
+./deploy.sh --full
+```
+
+Full prerequisites, what each variable is for, troubleshooting, and teardown
+steps are in **[DEPLOY.md](DEPLOY.md)**.
 
 ## Repository layout
 ```
+deploy.sh      One-command deploy script (see DEPLOY.md)
 stacks/        CloudFormation templates (data, compute, api, cdn, waf,
                observability, scaling, grafana, grafana-front)
 lambda/        Node.js 22 handlers (zero external deps; AWS SDK v3 only)
@@ -64,58 +60,34 @@ scripts/       seed.py (DynamoDB seed), build_lambdas.py (zip packager)
 grafana/       Grafana dashboard model
 architecture.* Diagram (png/svg) + Graphviz source
 ARCHITECTURE.md  Developer reference (stack inventory + change guide)
+DEPLOY.md      Deployment guide (prerequisites, deploy.sh usage, teardown)
 ```
 
 ## Prerequisites
-- An AWS account and the AWS CLI configured.
-- Python 3 (for the seed and packaging scripts). No Node/npm required - the
-  Lambdas use only the AWS SDK bundled in the Node.js 22 runtime.
-- Graphviz (optional, only to re-render the diagram).
+See [DEPLOY.md](DEPLOY.md#1-prerequisites) for the full list with version
+checks. In short: an AWS account with the CLI configured, Python 3, and Bash.
+No Node/npm required - the Lambdas use only the AWS SDK bundled in the
+Node.js 22 runtime. Graphviz is optional, only needed to re-render the diagram.
 
 ## Configure for your account
-These values are account-specific - set them via `--parameter-overrides` (or
-edit the parameter defaults):
-- Artifacts/exports/site bucket names (must be globally unique).
-- `AdminEmail` for CloudWatch alerts.
-- `VpcId` / `SubnetId` for the Grafana EC2 instance.
-- `AllowedCidr` / WAF IP-set for who may reach Grafana.
+`deploy.sh` figures out account-specific values (bucket names, account ID)
+automatically. The only things you supply yourself, and only if you want the
+`--full` deploy (monitoring + scaling + Grafana), are environment variables:
+`ADMIN_EMAIL`, `GRAFANA_VPC_ID`, `GRAFANA_SUBNET_ID`, `GRAFANA_ALLOWED_CIDR`.
+See [DEPLOY.md](DEPLOY.md#4-full-deploy-adds-monitoring-scaling-grafana) for
+what each one is and how to find it.
 
-No secrets are committed. The Grafana admin password is generated into Secrets
-Manager; the CloudFront->origin secret is passed at deploy time.
+No secrets are committed. `deploy.sh` generates the Grafana admin password
+into Secrets Manager and the CloudFront<->API shared secret at deploy time,
+reusing the same values on every re-run so re-deploying never breaks a
+working site.
 
-## Deploy (order matters)
-```bash
-REGION=eu-west-2
-ACCT=$(aws sts get-caller-identity --query Account --output text)
-ART=uk-clearing-advisor-artifacts-$ACCT
+## Deploy
+Use `./deploy.sh` (see Quickstart above and [DEPLOY.md](DEPLOY.md) for full
+details, prerequisites, and troubleshooting). If you need to deploy stacks
+individually or understand exactly what the script does under the hood, read
+the source - it's a straightforward sequential script, not a build system.
 
-# 1. Artifacts bucket + Lambda zips
-aws s3 mb s3://$ART --region $REGION
-python3 scripts/build_lambdas.py
-for f in build/*.zip; do aws s3 cp "$f" s3://$ART/lambda/ --region $REGION; done
-
-# 2. Data + seed
-aws cloudformation deploy --template-file stacks/data.yaml \
-  --stack-name uk-clearing-advisor-data --region $REGION
-python3 scripts/seed.py
-
-# 3. Compute, API
-aws cloudformation deploy --template-file stacks/compute.yaml \
-  --stack-name uk-clearing-advisor-compute --region $REGION \
-  --capabilities CAPABILITY_IAM --parameter-overrides ArtifactsBucket=$ART
-aws cloudformation deploy --template-file stacks/api.yaml \
-  --stack-name uk-clearing-advisor-api --region $REGION
-
-# 4. WAF (us-east-1), then CDN + frontend
-aws cloudformation deploy --template-file stacks/waf.yaml \
-  --stack-name uk-clearing-advisor-waf --region us-east-1
-aws cloudformation deploy --template-file stacks/cdn.yaml \
-  --stack-name uk-clearing-advisor-cdn --region $REGION \
-  --parameter-overrides WebACLArn=<waf-arn> ApiDomain=<api-host>
-aws s3 sync frontend/ s3://<site-bucket>/ --delete --region $REGION
-
-# 5. Optional: observability, scaling, grafana, grafana-front
-```
 See `ARCHITECTURE.md` for the full stack inventory and a "where to change what"
 guide.
 

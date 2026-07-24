@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-24
 
+### Added - one-command deploy script + deployment guide
+- Deploying this project previously meant running ~10 separate `aws`
+  commands by hand, in a specific order, while manually fetching or
+  inventing the CloudFront<->API shared secret and remembering to rebuild
+  Lambda zips before every compute deploy. None of that is inherent to
+  CloudFormation - it was just undocumented sequencing - so it's now
+  wrapped in a single script rather than requiring a switch to a different
+  IaC tool.
+- Added `deploy.sh`: checks AWS CLI auth, packages and uploads Lambda zips,
+  deploys `data` and seeds it, deploys `compute` (generating the shared
+  X-Origin-Verify secret on first run and safely reusing the same one on
+  every re-run by reading it back from the live `GetSubjects` function),
+  deploys `api`, `waf` (us-east-1), `cdn`, syncs the frontend, invalidates
+  CloudFront, then re-deploys `api` a second time with the real CloudFront
+  domain as `AllowOrigin` (fixes a real gap: `AllowOrigin` previously
+  defaulted to a placeholder and was never actually tightened in the
+  documented manual sequence).
+- `--full` additionally deploys `observability`, `scaling`, and the
+  two-pass `grafana` / `grafana-front` sequence (Grafana needs the
+  front door's CloudFront domain, which doesn't exist until Grafana's own
+  Elastic IP exists first - handled automatically, previously a manual
+  "deploy once with a placeholder, note the domain, redeploy" step).
+- Added `DEPLOY.md`: prerequisites (with why each one is needed, not just
+  a bare list), the two-tier core/`--full` deploy flow, what every
+  environment variable is for and how to find its value, re-run/update
+  guidance, a full reverse-order teardown sequence, and a troubleshooting
+  table for the failure modes actually hit while building and testing this
+  (auth not configured, CloudFront's genuine 5-15 min deploy time, geo-block
+  looking like a bug, `ROLLBACK_COMPLETE` diagnosis, non-public Grafana
+  subnets).
+- Verified: `bash -n` and `shellcheck` both pass clean on `deploy.sh`, and
+  the credential-check preflight was tested directly (invalid
+  `AWS_PROFILE` produces the intended clear error and exits before any AWS
+  resource calls, rather than failing confusingly partway through).
+- Updated `README.md` and `ARCHITECTURE.md` to point new users at
+  `deploy.sh` / `DEPLOY.md` instead of the old inline multi-command
+  snippets (which are now removed from README to avoid two conflicting
+  sources of deploy instructions).
+
 ### Added - cost dashboard (tag-based, in the existing Grafana)
 - Wanted the infrastructure cost visible on a dashboard. This AWS
   account is not dedicated to this app - it also runs other unrelated
