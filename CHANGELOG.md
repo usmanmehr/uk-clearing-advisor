@@ -12,9 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   genuine effort to help students; no responsibility is accepted for the
   accuracy of any information shown; users should verify course
   availability and offers directly with UCAS and the university; no fee
-  or profit is made from this service. Flagged to the user that this is
-  not a substitute for actual legal review, given the site collects
-  search inputs and could influence real Results Day decisions.
+  or profit is made from this service.
 - Frontend-only change (index.html, styles.css) - no architecture or
   infrastructure impact, so the diagram and ARCHITECTURE.md are unaffected.
 
