@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-24
 
+### Fixed - mobile usability (responsive CSS, not device detection)
+- Considered and deliberately rejected User-Agent-based device detection
+  for serving different markup to phones vs desktops: UA strings are
+  unreliable/spoofable, the site is served from S3 via CloudFront with
+  `CachingOptimized` (efficient, cheap caching that per-device HTML would
+  complicate or defeat), it doubles the markup to maintain forever, and it
+  doesn't react to window resizing, split-screen, or orientation change
+  the way real responsive CSS does. Fixed with viewport-width media
+  queries instead - the app already had a viewport meta tag and some
+  breakpoints, but they had real gaps.
+- Touch targets: buttons, the "Remove" A-level button, and the checkbox
+  now meet the ~44px minimum comfortable tap size (Apple/Google
+  guidance) - several were previously ~32-35px, easy to mis-tap on a
+  phone.
+- Added `touch-action: manipulation` on interactive elements to remove
+  the ~300ms double-tap-to-zoom delay some mobile browsers still apply.
+- Text inputs/selects now have `min-height: 44px` and stay at 16px+ font
+  size, which also prevents iOS Safari's automatic zoom-on-focus that
+  otherwise jars the layout every time a field is tapped.
+- Added a `640px` breakpoint (between the existing `860px` and `520px`
+  ones) to compress the hero section on phones specifically - it was
+  previously sized for tablet-width screens at that range, pushing the
+  actual search form further down the page than necessary on a typical
+  phone.
+- Fixed the A-level subject/grade/remove row at narrow phone widths
+  (<520px): it was a cramped 3-column grid that squeezed the subject
+  text input uncomfortably; now the Remove button drops to its own row
+  instead of shrinking the input further.
+- Added `overflow-x: hidden` on `body` as a guard against any accidental
+  horizontal scroll on narrow viewports, and `-webkit-text-size-adjust:
+  100%` so mobile browsers don't auto-inflate text size unpredictably.
+
 ### Added - one-command deploy script + deployment guide
 - Deploying this project previously meant running ~10 separate `aws`
   commands by hand, in a specific order, while manually fetching or

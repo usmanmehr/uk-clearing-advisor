@@ -19,7 +19,7 @@
   --radius: 12px;
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -27,6 +27,7 @@ body {
   background: var(--bg);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 .wrap { max-width: 1080px; margin: 0 auto; padding: 0 1.25rem; }
 a { color: var(--navy-2); }
@@ -90,6 +91,7 @@ label { display: block; font-weight: 600; margin-bottom: .35rem; color: var(--in
 input[type=text], select {
   width: 100%; padding: .7rem .8rem; border: 1px solid var(--line); border-radius: 8px;
   font-size: 1rem; background: #fff; transition: border-color .15s, box-shadow .15s;
+  min-height: 44px;
 }
 input[type=text]:focus, select:focus {
   outline: none; border-color: var(--navy-2); box-shadow: 0 0 0 3px rgba(31,61,120,.15);
@@ -99,14 +101,17 @@ fieldset { border: 1px solid var(--line); border-radius: 10px; margin: 0 0 1.1re
 legend { font-weight: 700; color: var(--navy); padding: 0 .4rem; }
 .alevel-row { display: grid; grid-template-columns: 1fr 110px auto; gap: .6rem; margin-bottom: .6rem; align-items: end; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem; align-items: end; }
-.checkbox { display: flex; align-items: center; gap: .5rem; }
-.checkbox input { width: auto; }
-.checkbox label { margin: 0; font-weight: 500; }
+.checkbox { display: flex; align-items: center; gap: .5rem; min-height: 44px; }
+.checkbox input[type=checkbox] {
+  width: 1.25rem; height: 1.25rem; margin: 0; accent-color: var(--navy); cursor: pointer; flex: none;
+}
+.checkbox label { margin: 0; font-weight: 500; cursor: pointer; }
 
 /* Buttons */
 button {
   background: var(--navy); color: #fff; border: 0; border-radius: 8px;
   padding: .8rem 1.4rem; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background .15s, transform .05s;
+  min-height: 44px;
 }
 button:hover { background: #0b1a38; }
 button:active { transform: translateY(1px); }
@@ -118,6 +123,7 @@ button.secondary:hover { background: #f2f5fb; }
 button.small { padding: .5rem .9rem; font-size: .9rem; }
 button.remove { background: #fff; color: var(--red); border: 1px solid #e4b7b7; padding: .6rem .7rem; font-weight: 600; }
 button.remove:hover { background: var(--red-bg); }
+button, a, input, select, label { touch-action: manipulation; }
 
 /* Info cards */
 .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: .8rem; }
@@ -162,14 +168,27 @@ button.remove:hover { background: var(--red-bg); }
 
 /* Responsive */
 @media (max-width: 860px) {
-  .hero-inner { grid-template-columns: 1fr; gap: 1.5rem; }
+  .hero-inner { grid-template-columns: 1fr; gap: 1.5rem; padding: 2rem 1.25rem; }
   .hero h1 { font-size: 1.9rem; }
-  .main-grid { grid-template-columns: 1fr; }
+  .main-grid { grid-template-columns: 1fr; padding: 1.5rem 1rem 2.5rem; }
   .form-card, .side, .results-card { grid-column: 1; }
+  .card { padding: 1.25rem; }
+  .wrap { padding: 0 1rem; }
+}
+@media (max-width: 640px) {
+  .hero-inner { padding: 1.5rem 1rem; gap: 1rem; }
+  .hero h1 { font-size: 1.6rem; }
+  .lede { font-size: 1rem; }
+  .hero-stats { gap: .5rem; }
+  .hero-stats div { padding: .7rem .4rem; }
+  .hero-stats dt { font-size: 1.25rem; }
+  .stat-row { gap: 1rem; }
 }
 @media (max-width: 520px) {
-  .alevel-row { grid-template-columns: 1fr 84px auto; }
+  .alevel-row { grid-template-columns: 1fr 84px; grid-template-rows: auto auto; }
+  .alevel-row .remove { grid-column: 1 / -1; justify-self: start; }
   .hero-stats dt { font-size: 1.4rem; }
+  .grid { grid-template-columns: 1fr; }
 }
 
 .note-line { font-size: .8rem; color: var(--muted); font-style: italic; margin: .4rem 0; }
@@ -187,6 +206,7 @@ button.remove:hover { background: var(--red-bg); }
 .link-btn {
   background: none; border: none; padding: 0; margin: 0; color: var(--navy-2);
   font-weight: 700; font-size: .85rem; text-decoration: underline; cursor: pointer;
+  min-height: 44px; display: inline-flex; align-items: center;
 }
 .link-btn:hover { color: var(--navy); }
 
