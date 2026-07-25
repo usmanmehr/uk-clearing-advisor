@@ -1,0 +1,151 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  UK Clearing Advisor - OS patching for the Grafana EC2 instance via SSM
+  Patch Manager. Daily scan-and-install at 07:00 UTC using a custom patch
+  baseline (same filters as AWS's default AL2023 baseline - Security and
+  Bugfix classifications, Critical/Important severity - but with
+  ApproveAfterDays: 0 instead of AWS's default 7, so security patches
+  apply the same day they're released rather than waiting out the
+  default soak period).
+  Additive only - does not modify stacks/grafana.yaml or any of the
+  running instance's existing configuration; can be deployed or removed
+  independently.
+  IMPORTANT: after deploying this stack, the target instance must be
+  tagged Key=Patch Group, Value=clearing-advisor-grafana (see DEPLOY.md)
+  so AWS-RunPatchBaseline picks up THIS custom baseline instead of
+  falling back to the account's registered default AL2023 baseline.
+  CloudFormation cannot add this tag itself, because the instance is
+  defined in a different stack (stacks/grafana.yaml).
+
+Parameters:
+  GrafanaInstanceId:
+    Type: String
+    Default: i-06dc3795d81e0d26c
+    Description: >
+      Instance ID of the Grafana EC2 host (output of the grafana stack -
+      not currently exported, so passed explicitly here).
+  PatchHourUTC:
+    Type: String
+    Default: '7'
+    Description: Hour (UTC, 0-23) to run the daily patch scan/install.
+  RebootOption:
+    Type: String
+    Default: RebootIfNeeded
+    AllowedValues: [RebootIfNeeded, NoReboot]
+    Description: >
+      RebootIfNeeded applies patches fully (some OS patches only take
+      effect after a reboot) but means a few minutes of Grafana downtime
+      on days a reboot is actually needed. NoReboot never disrupts the
+      running service but can leave a patch only partially applied until
+      a manual reboot.
+
+Resources:
+
+  # Same filters as AWS's own default AL2023 baseline (verified live via
+  # `aws ssm get-patch-baseline` against AWS-AmazonLinux2023DefaultPatchBaseline)
+  # but ApproveAfterDays: 0 instead of AWS's default 7 - appropriate for a
+  # single non-critical instance where getting the latest security patch
+  # matters more than a soak/observation period.
+  PatchBaseline:
+    Type: AWS::SSM::PatchBaseline
+    Properties:
+      Name: ClearingAdvisor-Grafana-AL2023-Baseline
+      OperatingSystem: AMAZON_LINUX_2023
+      Description: Daily security-patch baseline for the Grafana instance.
+      PatchGroups: [clearing-advisor-grafana]
+      ApprovalRules:
+        PatchRules:
+          - PatchFilterGroup:
+              PatchFilters:
+                - { Key: CLASSIFICATION, Values: [Security] }
+                - { Key: SEVERITY, Values: [Critical, Important] }
+            ApproveAfterDays: 0
+            ComplianceLevel: HIGH
+            EnableNonSecurity: false
+          - PatchFilterGroup:
+              PatchFilters:
+                - { Key: CLASSIFICATION, Values: [Bugfix] }
+            ApproveAfterDays: 0
+            ComplianceLevel: UNSPECIFIED
+            EnableNonSecurity: false
+
+  PatchLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: /aws/ssm/ClearingAdvisor-GrafanaPatching
+      RetentionInDays: 30
+
+  # Custom service role for the maintenance window task - AWS recommends
+  # this over the default service-linked role so permissions are scoped
+  # to exactly what patching needs, consistent with the rest of this
+  # project's least-privilege IAM approach.
+  MaintenanceWindowServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ssm.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonSSMMaintenanceWindowRole
+
+  MaintenanceWindow:
+    Type: AWS::SSM::MaintenanceWindow
+    Properties:
+      Name: ClearingAdvisor-Grafana-DailyPatch
+      Description: Daily OS patch scan/install for the Grafana instance.
+      Schedule: !Sub 'cron(0 ${PatchHourUTC} ? * * *)'
+      ScheduleTimezone: UTC
+      Duration: 2
+      Cutoff: 1
+      AllowUnassociatedTargets: false
+
+  MaintenanceWindowTarget:
+    Type: AWS::SSM::MaintenanceWindowTarget
+    Properties:
+      WindowId: !Ref MaintenanceWindow
+      ResourceType: INSTANCE
+      Targets:
+        - Key: InstanceIds
+          Values: [!Ref GrafanaInstanceId]
+
+  PatchTask:
+    Type: AWS::SSM::MaintenanceWindowTask
+    Properties:
+      WindowId: !Ref MaintenanceWindow
+      Name: DailyPatchInstall
+      Description: Scan and install approved OS patches, then reboot if required.
+      TaskType: RUN_COMMAND
+      TaskArn: AWS-RunPatchBaseline
+      ServiceRoleArn: !GetAtt MaintenanceWindowServiceRole.Arn
+      Priority: 1
+      MaxConcurrency: '1'
+      MaxErrors: '1'
+      Targets:
+        - Key: WindowTargetIds
+          Values: [!Ref MaintenanceWindowTarget]
+      TaskInvocationParameters:
+        MaintenanceWindowRunCommandParameters:
+          Comment: Daily 07:00 UTC patch scan/install for ClearingAdvisor Grafana instance.
+          Parameters:
+            Operation: [Install]
+            RebootOption: [!Ref RebootOption]
+          CloudWatchOutputConfig:
+            CloudWatchLogGroupName: !Ref PatchLogGroup
+            CloudWatchOutputEnabled: true
+
+Outputs:
+  MaintenanceWindowId:
+    Value: !Ref MaintenanceWindow
+  PatchBaselineId:
+    Value: !Ref PatchBaseline
+  PatchLogGroupName:
+    Value: !Ref PatchLogGroup
+  RequiredInstanceTagReminder:
+    Value: >-
+      Tag the target instance Key=Patch Group, Value=clearing-advisor-grafana
+      (aws ssm add-tags-to-resource) so this custom baseline is used instead
+      of the account default.

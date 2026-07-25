@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-25
 
+### Added - daily OS patching for the Grafana instance
+- Added `stacks/patching.yaml`: an SSM Patch Manager setup for the Grafana
+  EC2 instance - a custom patch baseline (Security + Bugfix
+  classifications, Critical/Important severity, matching AWS's own
+  default AL2023 baseline filters but with `ApproveAfterDays: 0` instead
+  of AWS's default 7, so security patches apply the same day they're
+  released), a daily Maintenance Window (`cron(0 7 ? * * *)`, 07:00 UTC),
+  and an `AWS-RunPatchBaseline` Run Command task with `RebootIfNeeded`.
+  Additive-only stack - does not modify `stacks/grafana.yaml` or any
+  existing instance configuration.
+- The target instance requires a `Patch Group=clearing-advisor-grafana`
+  tag to actually use this custom baseline instead of the account's
+  separately-managed default AL2023 baseline (an existing
+  `AWSSupportPatchwork-AmazonLinux2023PatchBaseline`, unrelated to this
+  change). CloudFormation cannot apply this tag itself, since the
+  instance is defined in a different stack - applied manually via
+  `aws ec2 create-tags` and documented as a required step in `DEPLOY.md`.
+- Verified filter values against the account's actual live default
+  AL2023 baseline (`aws ssm get-patch-baseline`) rather than assuming
+  documented example values.
+- Deployed live and verified: the tag is present on the instance, the
+  Maintenance Window is `Enabled` with the correct schedule and a real
+  `NextExecutionTime` of the following day at 07:00 UTC.
+- Not deployed automatically by `deploy.sh` - this targets a specific
+  already-running instance ID rather than infrastructure created fresh
+  on every deploy, so it's a separate, documented, optional step.
+
 ### Added - basic SEO/discoverability (no cookies, no tracking)
 - Cookies were considered and rejected as a promotion mechanism: they only
   recognise a browser already on the site (logins, preferences), not

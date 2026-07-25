@@ -144,8 +144,16 @@ The rendered diagram is `architecture.png` / `architecture.svg` (source:
 | uk-clearing-advisor-scaling | eu-west-2 | stacks/scaling.yaml | ScheduleManager + Results-Day scale up/down |
 | uk-clearing-advisor-grafana | eu-west-2 | stacks/grafana.yaml | EC2, EIP, SG, Cognito, instance role, admin secret |
 | uk-clearing-advisor-grafana-front | us-east-1 | stacks/grafana-front.yaml | Grafana WAF + CloudFront REPLACE_GRAFANA_DIST_ID |
+| uk-clearing-advisor-patching | eu-west-2 | stacks/patching.yaml | SSM Patch Baseline, Maintenance Window (daily 07:00 UTC), patch task for the Grafana EC2 instance |
 
 Artifacts bucket (Lambda code + provisioning): `uk-clearing-advisor-artifacts-REPLACE_ACCOUNT_ID`.
+
+Note: `uk-clearing-advisor-patching` requires the target instance to carry
+a `Patch Group=clearing-advisor-grafana` tag (applied via
+`aws ec2 create-tags`, not by CloudFormation, since the instance is
+defined in a different stack). Without that tag, `AWS-RunPatchBaseline`
+falls back to the account's registered default AL2023 baseline instead
+of this stack's custom one.
 
 ## "I want to change X" -> where
 

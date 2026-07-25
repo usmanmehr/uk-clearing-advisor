@@ -123,6 +123,39 @@ After a full deploy:
 - The Grafana **admin** password (fallback login, not the OAuth one) is in
   Secrets Manager under `ClearingAdvisor-GrafanaAdmin`.
 
+## 4a. Optional: daily OS patching for the Grafana instance
+
+Not part of `deploy.sh` or `--full` - deploy separately, since it targets a
+specific already-running instance ID rather than being created fresh each
+time:
+
+```bash
+aws cloudformation deploy \
+  --template-file stacks/patching.yaml \
+  --stack-name uk-clearing-advisor-patching \
+  --region eu-west-2 \
+  --capabilities CAPABILITY_IAM \
+  --parameter-overrides GrafanaInstanceId=<your-grafana-instance-id>
+
+# Required - CloudFormation can't tag an instance defined in a different
+# stack, so this must be run manually once after the stack deploys:
+aws ec2 create-tags \
+  --resources <your-grafana-instance-id> \
+  --tags "Key=Patch Group,Value=clearing-advisor-grafana" \
+  --region eu-west-2
+```
+
+Runs a daily scan-and-install at 07:00 UTC via SSM Patch Manager, using a
+custom baseline (Security + Bugfix classifications, Critical/Important
+severity - same filters as AWS's own default AL2023 baseline, but
+`ApproveAfterDays: 0` instead of AWS's default 7). Defaults to
+`RebootIfNeeded`, which means the instance may reboot on days a patch
+actually requires it - a few minutes of Grafana downtime, at a time within
+the 07:00-09:00 UTC maintenance window rather than a fixed minute. Override
+with `RebootOption=NoReboot` if you'd rather patches install without ever
+auto-rebooting (some patches then only take full effect after a manual
+reboot).
+
 ## 5. Re-running / updating
 
 `deploy.sh` is safe to re-run any time you pull new changes - `aws
