@@ -4,6 +4,30 @@ All notable changes to UK Clearing Advisor are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## 2026-07-25
+
+### Added - basic SEO/discoverability (no cookies, no tracking)
+- User asked about promoting the site and whether cookies could help drive
+  traffic. Cookies don't do that - they only recognise a browser already on
+  the site (logins, preferences), not attract new visitors - and adding any
+  beyond strictly-necessary ones would contradict the site's own "no
+  personal data collected" footer claim and trigger UK PECR cookie-consent
+  banner obligations for no benefit. Implemented actual discoverability
+  improvements instead.
+- Added `robots.txt` (allow all crawlers, points to the sitemap) and
+  `sitemap.xml` (single entry - this is a client-side single-page app with
+  no separate crawlable result pages, so one URL is correct, not
+  incomplete).
+- Added Open Graph and Twitter Card meta tags to `index.html` so links
+  pasted into Reddit/WhatsApp/social get a proper title+description
+  preview card instead of a bare URL - relevant since the planned
+  promotion route (Reddit communities like r/UniUK, r/UCAS around Results
+  Day, plus social/advisor sharing) depends on links being shared, not
+  typed. No image/thumbnail added yet (none exists in the repo). Also
+  added a canonical `<link>` tag.
+- Deployed live to S3, CloudFront invalidated, verified all three files
+  (index.html, robots.txt, sitemap.xml) match on the S3 origin directly.
+
 ## 2026-07-24
 
 ### Added - legal notice in the footer
