@@ -7,13 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## 2026-07-25
 
 ### Added - basic SEO/discoverability (no cookies, no tracking)
-- I asked about promoting the site and whether cookies could help drive
-  traffic. Cookies don't do that - they only recognise a browser already on
-  the site (logins, preferences), not attract new visitors - and adding any
-  beyond strictly-necessary ones would contradict the site's own "no
-  personal data collected" footer claim and trigger UK PECR cookie-consent
-  banner obligations for no benefit. Implemented actual discoverability
-  improvements instead.
+- Cookies were considered and rejected as a promotion mechanism: they only
+  recognise a browser already on the site (logins, preferences), not
+  attract new visitors - and adding any beyond strictly-necessary ones
+  would contradict the site's own "no personal data collected" footer
+  claim and trigger UK PECR cookie-consent banner obligations for no
+  benefit. Implemented actual discoverability improvements instead.
 - Added `robots.txt` (allow all crawlers, points to the sitemap) and
   `sitemap.xml` (single entry - this is a client-side single-page app with
   no separate crawlable result pages, so one URL is correct, not
@@ -112,7 +111,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   sources of deploy instructions).
 
 ### Added - cost dashboard (tag-based, in the existing Grafana)
-- I wanted the infrastructure cost visible on a dashboard. This AWS
+- Made the infrastructure cost visible on a dashboard. This AWS
   account is not dedicated to this app - it also runs other unrelated
   stacks/workloads - so account-level billing (e.g. the `AWS/Billing`
   CloudWatch metric) would be meaningless for "cost of this app" without
@@ -263,7 +262,7 @@ touching any grading logic.
   D=24, E=16 - verified directly against Pearson's official BTEC/A-level
   tariff table and cross-checked against two independent sources). Offer
   thresholds recalibrated to match (BBB=120, ABB=128, AAB=136, AAA=144,
-  A\*AA=152). Scoped to A-levels only per my instruction; other qualification
+  A\*AA=152). Scoped to A-levels only; other qualification
   types (IB, BTEC) were investigated and verified on the same points scale
   but deliberately not added to keep scope to A-levels.
 
@@ -326,7 +325,7 @@ five new functions.
   the deploy pipeline's reported success.
 
 ### Fixed - students with only 2 A-levels always got zero results
-- I found this while directly answering "is this fit for purpose": the search
+- Found while assessing whether the site is fit for purpose: the search
   form's own stated minimum is 2 A-levels, but `gradeTotal()` summed
   whatever grades were given without normalising for count. Offer
   thresholds are calibrated against 3 A-levels (BBB = 30 points minimum).
@@ -367,11 +366,11 @@ five new functions.
   headers on both cache behaviours; a 50-subject payload is rejected with
   `A maximum of 10 A-level subjects is supported`; Grafana now returns
   `server: nginx` with no version number.
-- Noted but out of scope by my request: a real, active AWS access key was
-  found in plaintext in my local `~/.aws/credentials`,
-  `.bak`, and `.bash_history` - confirmed NOT present anywhere in the git
-  repository or its history. Workstation-local risk, not an application
-  vulnerability; no changes made to my workstation per my instruction.
+- Noted but out of scope: a real, active AWS access key was found in
+  plaintext in the local `~/.aws/credentials`, `.bak`, and `.bash_history`
+  files on the development host - confirmed NOT present anywhere in the
+  git repository or its history. Workstation-local risk, not an
+  application vulnerability; no changes made to the workstation.
 
 ### Security - close direct API Gateway bypass of WAF/geo-block
 - The HTTP API was reachable directly at its `execute-api` URL, bypassing
