@@ -191,6 +191,62 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlertsTopic]
 
+  # DailyScraper (see stacks/compute.yaml) publishes ScraperRunCount,
+  # ScraperChangesDetected and ScraperErrorCount directly via PutMetricData
+  # on every run - no log metric filter needed. Notify-only: this alarm
+  # deliberately does NOT change the scraper's schedule itself. Baseline
+  # observed 24-28 Jul 2026 at the current hourly ramp-up cadence was 0-10
+  # detected changes per day (44 universities); this threshold (15 changes
+  # in a rolling 6h window) is a first pass and should be revisited once
+  # more data accumulates, especially once the 15-minute Results Day
+  # schedule takes over on 13 Aug (same threshold would trip far more
+  # readily at that cadence). Auto-adjusting the scrape frequency in
+  # response was considered and deliberately not implemented - it would
+  # need a Lambda with scheduler:UpdateSchedule permissions to rewrite the
+  # RampUpScraperSchedule rate() expression, and a higher check frequency
+  # feeding back into more detected "changes" (including from a university
+  # rate-limiting the scraper) risks an oscillating feedback loop. A human
+  # deciding whether to manually shorten the interval early is safer.
+  ScraperDriftAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ClearingAdvisor-ScraperDriftHigh
+      AlarmDescription: >-
+        WARNING: DailyScraper is detecting more clearing-page changes than
+        the recent baseline. Notify-only - does not change the scrape
+        schedule. Consider manually increasing frequency (see
+        RampUpScraperSchedule in stacks/compute.yaml) if this persists.
+      Namespace: !Ref Namespace
+      MetricName: ScraperChangesDetected
+      Statistic: Sum
+      Period: 21600
+      EvaluationPeriods: 1
+      Threshold: 15
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertsTopic]
+      OKActions: [!Ref AlertsTopic]
+
+  ScraperErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ClearingAdvisor-ScraperErrorRate
+      AlarmDescription: >-
+        WARNING: DailyScraper fetch/processing errors elevated above the
+        known baseline (~2 per run, believed to be 2 specific universities
+        - see CHANGELOG). A rise beyond that baseline may indicate a
+        broader outage or a scraped site blocking the scraper's User-Agent.
+      Namespace: !Ref Namespace
+      MetricName: ScraperErrorCount
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertsTopic]
+      OKActions: [!Ref AlertsTopic]
+
   OperationsDashboard:
     Type: AWS::CloudWatch::Dashboard
     Properties:
@@ -223,7 +279,16 @@ Resources:
                             ["AWS/Lambda", "Invocations", "FunctionName", "${SearchFunctionName}"]] } },
             { "type": "metric", "x": 0, "y": 12, "width": 24, "height": 6,
               "properties": { "title": "Concurrent executions", "region": "${AWS::Region}", "stat": "Maximum", "period": 60,
-                "metrics": [["AWS/Lambda", "ConcurrentExecutions", "FunctionName", "${SearchFunctionName}"]] } }
+                "metrics": [["AWS/Lambda", "ConcurrentExecutions", "FunctionName", "${SearchFunctionName}"]] } },
+            { "type": "metric", "x": 0, "y": 18, "width": 12, "height": 6,
+              "properties": { "title": "Scraper: changes detected per run", "region": "${AWS::Region}",
+                "stat": "Sum", "period": 3600, "view": "timeSeries",
+                "metrics": [["${Namespace}", "ScraperChangesDetected"]] } },
+            { "type": "metric", "x": 12, "y": 18, "width": 12, "height": 6,
+              "properties": { "title": "Scraper: runs vs errors", "region": "${AWS::Region}",
+                "stat": "Sum", "period": 3600, "view": "timeSeries",
+                "metrics": [["${Namespace}", "ScraperRunCount"],
+                            ["${Namespace}", "ScraperErrorCount"]] } }
           ]
         }
 
@@ -274,7 +339,8 @@ Resources:
                   "${SlowSearchAlarm.Arn}", "${SearchDurationAlarm.Arn}",
                   "${RateLimitSurgeAlarm.Arn}",
                   "${HoneypotSpikeAlarm.Arn}", "${ZeroResultsSpikeAlarm.Arn}",
-                  "${ResultsDayConcurrencyAlarm.Arn}"
+                  "${ResultsDayConcurrencyAlarm.Arn}",
+                  "${ScraperDriftAlarm.Arn}", "${ScraperErrorRateAlarm.Arn}"
                 ] } }
           ]
         }
