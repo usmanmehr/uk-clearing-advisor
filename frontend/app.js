@@ -15,6 +15,23 @@ const PAGE = 10;
 const el = (id) => document.getElementById(id);
 const fmtGBP = (n) => '£' + Number(n).toLocaleString('en-GB');
 
+// Short relative-time string ("3 min ago", "yesterday") - used for both the
+// hero freshness stat and the per-course "checked X ago" line, so a student
+// deciding whether to trust a status badge can see how current it is
+// without doing date-maths on an ISO timestamp themselves.
+function timeAgo(isoString) {
+  if (!isoString) return null;
+  const diffMs = Date.now() - new Date(isoString).getTime();
+  if (Number.isNaN(diffMs) || diffMs < 0) return null;
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
 // Small Levenshtein distance for client-side "did you mean" suggestions.
 // (A separate, tiny implementation - not shared with the backend's - since
 // there is no build step to share modules between frontend and Lambda.)
@@ -124,6 +141,13 @@ function courseCard(c) {
   const driftWarn = c.possibleStatusChange
     ? '<div class="warn">Automated check flagged a possible change to this page - status above may be out of date. Confirm directly.</div>'
     : '';
+  // Per-course freshness: shown next to the status badge, since that's the
+  // moment a student decides whether to trust it before calling. Only
+  // rendered when we have a real timestamp - never fabricated.
+  const checkedAgo = timeAgo(c.lastAutomatedCheck);
+  const freshnessLine = checkedAgo
+    ? `<div class="freshness-line${c.possibleStatusChange ? ' stale' : ''}">Clearing page checked ${checkedAgo}</div>`
+    : '';
 
   // Only show figures that are verified. Graduate prospects are per-university
   // (CUG 2027) where published and DO vary by university, so they stay on
@@ -152,6 +176,7 @@ function courseCard(c) {
     ${sourceLine}
     ${warn}
     ${driftWarn}
+    ${freshnessLine}
     ${c.statusNote ? `<div class="note-line">${c.statusNote}</div>` : ''}
     <div class="contact">Clearing: ${phone} ${page ? '&middot; ' + page : ''}
       ${c.hotlineOpens ? `<br>Hotline: ${c.hotlineOpens}` : ''}</div>
@@ -321,6 +346,31 @@ async function onSubmit(e) {
   }
 }
 
+// ---- Freshness stat (hero banner) ----
+// Shows students the ACTUAL most recent automated check across all tracked
+// universities, not a raw "N drifts detected" count. A change count is an
+// engineering signal (and can be a false positive - see DailyScraper's own
+// heuristic caveats); "checked 12 minutes ago" is something a student can
+// actually use to judge how current the status badges are, without reading
+// it as "something is wrong". Falls back to the static "Hourly" label
+// already in the HTML if this fails - never blocks or breaks the page.
+async function updateFreshnessStat() {
+  try {
+    const res = await fetch(`${API}/universities`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const timestamps = (data.universities || [])
+      .map((u) => u.lastAutomatedCheck)
+      .filter(Boolean)
+      .map((t) => new Date(t).getTime())
+      .filter((t) => !Number.isNaN(t));
+    if (!timestamps.length) return;
+    const mostRecent = new Date(Math.max(...timestamps)).toISOString();
+    const ago = timeAgo(mostRecent);
+    if (ago) el('freshness-value').textContent = `Checked ${ago}`;
+  } catch { /* keep the static "Hourly" fallback already in the HTML */ }
+}
+
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', () => {
   const prefilled = prefillFromUrl();
@@ -329,6 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addAlevelRow();
   }
   loadSubjects('');
+  updateFreshnessStat();
   el('add-alevel').addEventListener('click', () => addAlevelRow());
   el('course-interest').addEventListener('input', (e) => {
     clearTimeout(debounce);

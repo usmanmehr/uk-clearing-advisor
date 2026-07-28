@@ -65,11 +65,16 @@ a { color: var(--navy-2); }
   content: ""; position: absolute; left: 0; top: .45em; width: .7rem; height: .7rem;
   background: var(--gold); border-radius: 3px; transform: rotate(45deg);
 }
-.hero-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: .75rem; margin: 0; }
+.hero-stats { display: grid; grid-template-columns: repeat(2,1fr); gap: .75rem; margin: 0; }
 .hero-stats div { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15);
   border-radius: 10px; padding: 1rem .5rem; text-align: center; }
 .hero-stats dt { font-size: 1.7rem; font-weight: 800; color: #fff; }
 .hero-stats dd { margin: .2rem 0 0; font-size: .78rem; color: #cdd7ea; }
+/* Freshness stat starts at a safe static default (set in HTML) and is
+   replaced by a real timestamp-derived value once /universities loads -
+   see updateFreshnessStat() in app.js. #freshness-value gets a smaller
+   font than the other stats since "23 min ago" is wider than a number. */
+#freshness-value { font-size: 1.1rem; }
 
 /* Layout */
 .main-grid {
@@ -196,6 +201,8 @@ button, a, input, select, label { touch-action: manipulation; }
 }
 
 .note-line { font-size: .8rem; color: var(--muted); font-style: italic; margin: .4rem 0; }
+.freshness-line { font-size: .78rem; color: var(--muted); margin: .3rem 0 0; }
+.freshness-line.stale { color: var(--amber); font-weight: 600; }
 .sources { font-size: .76rem; color: var(--muted); margin: .1rem 0 .3rem; }
 .sources a { color: var(--navy-2); }
 .salary-banner {

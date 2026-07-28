@@ -4,6 +4,79 @@ All notable changes to UK Clearing Advisor are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## 2026-07-28
+
+### Added - scraper drift alarms and dashboard visibility
+- `DailyScraper` has published `ScraperRunCount`, `ScraperChangesDetected`
+  and `ScraperErrorCount` via `PutMetricData` since the Results Day ramp-up
+  work, but none of the three appeared on either CloudWatch dashboard - the
+  data existed but was invisible day to day.
+- Added two widgets to `ClearingAdvisor-Operations`
+  (`stacks/observability.yaml`): "Scraper: changes detected per run" and
+  "Scraper: runs vs errors", both hourly Sum over the existing metrics.
+- Added `ClearingAdvisor-ScraperDriftHigh` (threshold 15 changes in a
+  rolling 6h window) and `ClearingAdvisor-ScraperErrorRate` (threshold 10
+  errors/hour) - both notify-only via the existing `AlertsTopic` SNS topic,
+  same pattern as every other alarm in this stack. Thresholds are a first
+  pass calibrated against the real 24-28 Jul baseline (0-10 changes/day at
+  the current hourly ramp-up cadence) and are flagged as worth revisiting
+  once the 15-minute Results Day schedule takes over on 13 Aug.
+- Deliberately did NOT build auto-adjustment of the scrape frequency in
+  response to the drift alarm. Considered and rejected: would need a
+  Lambda with `scheduler:UpdateSchedule` to rewrite
+  `RampUpScraperSchedule`'s `rate()` expression, and a higher check
+  frequency feeding back into more detected "changes" (including from a
+  university rate-limiting the scraper - see the two-persistent-errors
+  investigation below) risks an oscillating feedback loop. A human
+  deciding whether to manually shorten the interval is safer.
+- Wired both new alarms into `ClearingAdvisor-ResultsDay`'s existing
+  "Active alarms" widget.
+- Investigated the ~2 errors/run seen on every `DailyScraper` invocation
+  since 22 Jul: correlates with University of Cambridge and Coventry
+  University being the only 2 of 44 contacts with no `lastAutomatedCheck`
+  ever recorded. Lambda logs show a Node `undici`
+  `AssertionError: assert(!this.paused)` on stream teardown. Not yet fixed
+  - flagged for follow-up. Cambridge's own seeded `notes` field already
+  states it does not enter UCAS Clearing, so it may not be worth scraping
+  regardless.
+- Deployed live and verified: both alarms exist in the account
+  (`ScraperDriftHigh` in `INSUFFICIENT_DATA` pending its first full 6h
+  window, `ScraperErrorRate` `OK`), and `get-dashboard` on
+  `ClearingAdvisor-Operations` confirms the new widgets are present.
+
+### Added - front-page freshness indicator (student-facing)
+- Considered publishing the raw scraper "changes detected" count on the
+  public site, then rejected it: that count is an engineering signal built
+  on a text-heuristic that can false-positive (see the Cambridge/Coventry
+  errors above), and a student under Clearing pressure can't act on "31
+  changes this week" - it doesn't tell them whether to trust the specific
+  status badge in front of them. Freshness ("checked X minutes ago") is the
+  honest, useful version of the same underlying signal.
+- Added a live hero-section stat ("Checked X ago" / "clearing pages checked
+  automatically") computed client-side in `frontend/app.js` from the
+  existing `/api/universities` route's `lastAutomatedCheck` field - no new
+  backend endpoint. Falls back to a static "Hourly" label if the fetch
+  fails, so it never blocks page load.
+- Added a per-course "Clearing page checked X ago" line next to each
+  status badge in `courseCard()`, turning amber (reusing the existing
+  `.warn`/amber colour token) when that university's `possibleStatusChange`
+  flag is set - shown at the exact point a student decides whether to
+  trust the badge before calling.
+- Hero stats grid changed from a 3-column to a 2x2 layout
+  (`frontend/styles.css`) to fit the new stat without cramping the
+  existing three on narrow screens.
+- Deployed live: synced to the static site S3 bucket and invalidated
+  CloudFront (distribution `E1GGDJ3Q7WHJFP`, invalidation
+  `I1D2DGY1AGKDM4LNKA9Q3BM0XY`, confirmed `Completed`). Verified by reading
+  the deployed `index.html`/`app.js`/`styles.css` back directly from the
+  S3 origin (CloudFront's GB geo-block prevented a direct browser-equivalent
+  check from this non-UK host, same limitation noted in earlier entries).
+- Committed on branch `scraper-observability-and-freshness-ui`
+  ([PR #1](https://github.com/usmanmehr/uk-clearing-advisor/pull/1)) rather
+  than direct to `main`, since the change was already deployed live ahead
+  of the PR - merging brings `main` in sync with production rather than
+  triggering a new deploy.
+
 ## 2026-07-25
 
 ### Added - daily OS patching for the Grafana instance
