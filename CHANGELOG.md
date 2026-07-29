@@ -4,6 +4,42 @@ All notable changes to UK Clearing Advisor are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## 2026-07-29
+
+### Added - optional custom domain for the CloudFront distribution
+- `stacks/cdn.yaml` gained two optional parameters, `DomainName` and
+  `CertificateArn`, both defaulting to empty so existing deployments are
+  unaffected unless explicitly opted in. When `DomainName` is set, the
+  distribution gets an `Aliases` entry and an ACM-backed `ViewerCertificate`
+  (SNI, `TLSv1.2_2021` minimum) instead of the default CloudFront
+  certificate.
+- This is a CloudFront platform requirement, not a design choice: CloudFront
+  will not serve a custom alternate domain name without an attached, valid
+  ACM certificate covering that domain (certificate must live in
+  `us-east-1` regardless of the stack's own region) - there is no "custom
+  domain over plain HTTP, no certificate" option available on CloudFront.
+- Deployed live: requested and DNS-validated an ACM certificate for
+  `clearing.mehrs.net` via the existing Route 53 hosted zone, redeployed
+  `uk-clearing-advisor-cdn` with the new parameters, and added a Route 53
+  Alias A record (not a plain CNAME - resolves without an extra DNS lookup,
+  targeting CloudFront's fixed hosted zone ID `Z2FDTNDATAQYW2`) pointing the
+  domain at the distribution.
+- Verified the redeploy did not reset `ApiOriginSecret` to its template
+  default by reading the live distribution's origin custom header back
+  after the update - it was preserved correctly (`aws cloudformation
+  deploy` uses the template default for any parameter not explicitly
+  passed, unlike `update-stack --use-previous-parameters`, so this was
+  worth checking rather than assuming).
+- Verified end-to-end from a real UK browser: correct TLS certificate,
+  correct page content, geo-restriction still enforced (an earlier check
+  from a container with a different network egress path was blocked, which
+  turned out to be that container's own routing, not a CloudFront GeoIP
+  misclassification - confirmed by comparing `ifconfig.co/country` against
+  `checkip.amazonaws.com` from within it).
+- The account-specific domain name and certificate ARN are recorded in
+  `DEPLOYMENT.md` (local, git-ignored - not committed, matching how every
+  other account-specific ID in this project is handled).
+
 ## 2026-07-28
 
 ### Added - scraper drift alarms and dashboard visibility

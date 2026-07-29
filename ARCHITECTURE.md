@@ -21,7 +21,7 @@ flowchart LR
     subgraph EDGE["Global edge (WAF control plane us-east-1)"]
       direction TB
       WAF1["AWS WAF<br/>clearing-advisor-webacl<br/>GB geo, rate limit,<br/>managed rules, Bot Control"]
-      CF1["CloudFront (app)<br/>REPLACE_APP_CF.cloudfront.net<br/>geo-restrict GB"]
+      CF1["CloudFront (app)<br/>REPLACE_APP_CF.cloudfront.net<br/>+ optional custom domain (ACM)<br/>geo-restrict GB"]
       WAF2["AWS WAF<br/>grafana-webacl<br/>allow GB OR IP-set"]
       CF2["CloudFront (Grafana)<br/>REPLACE_GRAFANA_CF.cloudfront.net<br/>trusted cert"]
       WAF1 --- CF1
@@ -175,6 +175,16 @@ of this stack's custom one.
 | Grafana dashboard panels | grafana/dashboard.json | re-upload to artifacts + re-provision (or edit in UI) |
 
 ## Key config notes for future work
+- Custom domain (optional): stacks/cdn.yaml takes DomainName + CertificateArn
+  parameters. Leaving both blank (the default) keeps the app on the default
+  `*.cloudfront.net` domain. If set, CertificateArn MUST be an ACM certificate
+  requested in us-east-1 (a CloudFront requirement regardless of the region
+  this stack deploys to) covering DomainName, and DNS-validated before this
+  stack deploys. Point the domain's DNS at the CloudFront distribution with a
+  Route 53 Alias record (not a plain CNAME - Alias resolves without an extra
+  DNS hop and has no query cost) targeting the fixed CloudFront hosted zone
+  ID `Z2FDTNDATAQYW2`. See DEPLOYMENT.md (local, git-ignored) for the actual
+  domain/cert ARN in use.
 - SearchCourses is invoked via the `live` alias so provisioned concurrency works.
   Any code change needs a NEW published version + the alias repointed (see the
   vN pattern in compute.yaml) - editing $LATEST alone will not reach production.
