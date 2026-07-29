@@ -18,6 +18,24 @@ Parameters:
     Type: String
     NoEcho: true
     Description: Shared secret CloudFront sends to the origin (X-Origin-Verify).
+  DomainName:
+    Type: String
+    Default: ''
+    Description: >
+      Optional custom domain (e.g. monitor.example.com) for this Grafana
+      front door. Leave blank to keep using only the default
+      *.cloudfront.net domain. If set, CertificateArn must also be set to
+      a validated ACM certificate covering this domain - CloudFront
+      requires a certificate for any alternate domain name.
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: >
+      ACM certificate ARN covering DomainName. Must be requested in
+      us-east-1 (a CloudFront requirement). Required if DomainName is set.
+
+Conditions:
+  HasCustomDomain: !Not [!Equals [!Ref DomainName, '']]
 
 Resources:
 
@@ -71,6 +89,7 @@ Resources:
         HttpVersion: http2
         PriceClass: PriceClass_100
         WebACLId: !GetAtt WebACL.Arn
+        Aliases: !If [HasCustomDomain, [!Ref DomainName], !Ref 'AWS::NoValue']
         Origins:
           - Id: grafana-origin
             DomainName: !Ref OriginHost
@@ -87,8 +106,12 @@ Resources:
           AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
           CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
           OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac  # AllViewerExceptHostHeader
-        ViewerCertificate:
-          CloudFrontDefaultCertificate: true
+        ViewerCertificate: !If
+          - HasCustomDomain
+          - AcmCertificateArn: !Ref CertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
 
 Outputs:
   CloudFrontDomain:
