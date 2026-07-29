@@ -20,6 +20,27 @@ Parameters:
       Each Lambda behind the API checks this and rejects direct execute-api
       calls that skip CloudFront/WAF (geo-block, edge rate limiting). Must
       match the ApiOriginSecret used in the compute stack.
+  DomainName:
+    Type: String
+    Default: ''
+    Description: >
+      Optional custom domain (e.g. clearing.example.com) to add as a
+      CloudFront alternate domain name (Alias). Leave blank to keep using
+      only the default *.cloudfront.net domain. If set, CertificateArn must
+      also be set to a validated ACM certificate covering this domain -
+      CloudFront requires a certificate for any alternate domain name, it
+      cannot serve a custom hostname on the default certificate.
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: >
+      ACM certificate ARN covering DomainName. Must be requested in
+      us-east-1 regardless of the region this stack deploys to - that's a
+      CloudFront requirement, not a choice made by this template. Required
+      if DomainName is set.
+
+Conditions:
+  HasCustomDomain: !Not [!Equals [!Ref DomainName, '']]
 
 Resources:
 
@@ -156,6 +177,7 @@ Resources:
         HttpVersion: http2and3
         PriceClass: PriceClass_100
         WebACLId: !Ref WebACLArn
+        Aliases: !If [HasCustomDomain, [!Ref DomainName], !Ref 'AWS::NoValue']
         Restrictions:
           GeoRestriction:
             RestrictionType: whitelist
@@ -206,8 +228,12 @@ Resources:
             ResponseCode: 200
             ResponsePagePath: /index.html
             ErrorCachingMinTTL: 10
-        ViewerCertificate:
-          CloudFrontDefaultCertificate: true
+        ViewerCertificate: !If
+          - HasCustomDomain
+          - AcmCertificateArn: !Ref CertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
 
   StaticSiteBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -238,3 +264,7 @@ Outputs:
   CloudFrontDomainName:
     Value: !GetAtt Distribution.DomainName
     Export: { Name: !Sub '${AWS::StackName}-CloudFrontDomainName' }
+  CustomDomainName:
+    Condition: HasCustomDomain
+    Value: !Ref DomainName
+    Export: { Name: !Sub '${AWS::StackName}-CustomDomainName' }
