@@ -4,6 +4,36 @@ All notable changes to UK Clearing Advisor are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## 2026-07-29 (2)
+
+### Added - optional custom domain for the Grafana front door
+- `stacks/grafana-front.yaml` gained the same optional `DomainName`/
+  `CertificateArn` parameters added to `stacks/cdn.yaml` earlier - default
+  blank, no impact on existing deployments. Sets `Aliases` + an ACM-backed
+  `ViewerCertificate` (SNI, `TLSv1.2_2021` minimum) when `DomainName` is set.
+- Unlike the main site's CloudFront distribution, this front door's
+  `FrontDomain` value is also baked into the Grafana EC2 instance's boot
+  UserData (nginx origin listener, `GF_SERVER_ROOT_URL`,
+  `GF_SECURITY_CSRF_TRUSTED_ORIGINS`) and into the Cognito app client's
+  `CallbackURLs`/`LogoutURLs`. Amazon Linux only runs UserData once, on
+  first boot, so redeploying this stack alone does NOT propagate a new
+  domain to an already-running instance - the instance's nginx config and
+  `/etc/sysconfig/grafana-server`, plus the Cognito client, need to be
+  updated separately (done here via SSM Run Command and
+  `cognito-idp update-user-pool-client` rather than a stack redeploy).
+- Deployed live: requested and DNS-validated an ACM certificate for the
+  custom domain via the existing Route 53 zone, redeployed
+  `uk-clearing-advisor-grafana-front`, added a Route 53 Alias A record
+  (not a plain CNAME, targeting CloudFront's fixed hosted zone ID
+  `Z2FDTNDATAQYW2`), updated the Cognito app client's callback/logout URLs
+  to include the new domain (kept the old CloudFront domain and nip.io
+  entries too, so neither breaks), and reconfigured the running instance
+  via SSM (confirmed `nginx -t` passed, both `nginx` and `grafana-server`
+  restarted and reported `active`).
+- The account-specific domain name and certificate ARN are recorded in
+  `DEPLOYMENT.md` (local, git-ignored), consistent with how the main
+  site's custom domain was handled.
+
 ## 2026-07-29
 
 ### Added - optional custom domain for the CloudFront distribution
