@@ -801,3 +801,39 @@ five new functions.
 
 ### Changed
 - License updated.
+
+## 2026-07-30 (3)
+
+### Changed - DEPLOYMENT.md rewritten, account-specific values split out
+- `DEPLOYMENT.md` had drifted from live state: it still listed the custom
+  domain as "not yet deployed" a week after both the app's and Grafana's
+  custom domains actually went live (2026-07-29 entries), and several other
+  sections (alarm count, scraper schedule count, dashboard panel list) had
+  fallen behind the same way. Since it's git-ignored (deliberately, to keep
+  live account IDs/domains out of a public repo), nothing catches this drift
+  automatically - it only gets fixed when someone happens to reread it.
+- Re-verified every claim in the doc directly against live AWS state rather
+  than trusting the previous text: ran `aws cloudformation describe-stacks`
+  against all 10 stacks (both regions), confirmed stack status is
+  `*_COMPLETE` on every one, and pulled real output/parameter values (custom
+  domains, certificate ARNs, distribution IDs, security group ID, Cognito
+  user pool ID, admin email). Also found and documented a real, previously
+  unstated fact: the `CUGRankings` and `Scholarships` DynamoDB tables both
+  currently hold 0 items (confirmed via `aws dynamodb scan --select COUNT`)
+  - the ranking/scholarship code paths are live against genuinely empty
+  tables, not placeholder-but-populated data.
+- Split account-specific values (account ID, region, custom domains,
+  certificate ARNs, CloudFront distribution IDs, bucket names, security
+  group ID, Cognito pool ID, admin email) out of `DEPLOYMENT.md` into a new
+  `clearing.env` file, added to `.gitignore`'s existing (unused until now)
+  reference to that exact filename. `DEPLOYMENT.md` now describes *what's
+  deployed and when* and references `clearing.env` for *the actual current
+  values*, instead of duplicating both in one doc that has to stay
+  consistent with itself as well as with reality. This doesn't fix the
+  root cause (nothing enforces re-verification before a doc update), but it
+  does mean a future update only has to change one file, not find and
+  update the same value in two places.
+- Did not change `DEPLOY.md` - it's the public, generic deployment guide
+  and correctly uses placeholder values throughout (`<your-account-id>`,
+  `vpc-xxxxxxxx`, etc.), not real ones, so it wasn't part of the drift
+  problem this addresses.
