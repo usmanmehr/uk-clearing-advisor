@@ -181,7 +181,11 @@ Resources:
           sslverify=1
           EOF
 
-          dnf install -y grafana nginx openssl
+          # cronie added explicitly: AL2023 does not include cron by default
+          # (AWS deprecated it in favour of systemd timers) - confirmed via
+          # AWS's own AL2023 user guide before assuming crontab/cron.d would
+          # just work. Installed anyway, since a cron.d entry is used below.
+          dnf install -y grafana nginx openssl cronie
 
           PW=$(aws secretsmanager get-secret-value --secret-id ${GrafanaAdminSecret} --query SecretString --output text --region ${AWS::Region})
 
@@ -281,7 +285,61 @@ Resources:
           aws s3 cp s3://${ArtifactsBucket}/grafana/dashboard.json /var/lib/grafana/dashboards/dashboard.json --region ${AWS::Region}
           chown -R grafana:grafana /var/lib/grafana/dashboards
 
+          # OS patch check on boot + daily cron. Belt-and-suspenders with the
+          # separate SSM Patch Manager schedule (stacks/patching.yaml) - that
+          # one only installs Security/Bugfix-classified patches via a patch
+          # baseline and can silently miss a day if the instance happens to
+          # be stopped at its scheduled time (found and alerted-on
+          # separately). This does a full `dnf update` (broader scope) and
+          # specifically runs at boot, so a stop/start cycle - the exact
+          # scenario that caused the SSM path to miss 4 days - patches the
+          # instance the moment it comes back up, regardless of what time
+          # that happens to be. --exclude=grafana on purpose: grafana is
+          # installed from the external rpm.grafana.com repo added above
+          # specifically to pin a known-good version; a blanket update
+          # pulling in a new major Grafana version unattended (possibly
+          # right before Results Day) is a real risk worth avoiding.
+          mkdir -p /opt/clearing-advisor/scripts /var/log
+          cat >/opt/clearing-advisor/scripts/patch-check.sh <<'EOF'
+          #!/bin/bash
+          LOG_FILE=/var/log/grafana-patch.log
+          echo "$(date) - Running patch check" >> "$LOG_FILE"
+          dnf check-update --exclude=grafana >> "$LOG_FILE" 2>&1
+          RC=$?
+          if [ "$RC" -eq 100 ]; then
+            echo "$(date) - Updates available, installing..." >> "$LOG_FILE"
+            dnf -y update --exclude=grafana >> "$LOG_FILE" 2>&1
+            echo "$(date) - Updates completed" >> "$LOG_FILE"
+          elif [ "$RC" -eq 0 ]; then
+            echo "$(date) - No updates available" >> "$LOG_FILE"
+          else
+            echo "$(date) - dnf check-update failed with exit code $RC" >> "$LOG_FILE"
+          fi
+          EOF
+          chmod 755 /opt/clearing-advisor/scripts/patch-check.sh
+
+          cat >/etc/systemd/system/clearing-advisor-patch.service <<'EOF'
+          [Unit]
+          Description=Clearing Advisor - OS patch check on boot
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/opt/clearing-advisor/scripts/patch-check.sh
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          cat >/etc/cron.d/clearing-advisor-patch <<'EOF'
+          0 7 * * * root /opt/clearing-advisor/scripts/patch-check.sh
+          EOF
+          chmod 644 /etc/cron.d/clearing-advisor-patch
+
           systemctl daemon-reload
+          systemctl enable --now crond
+          systemctl enable --now clearing-advisor-patch.service
           systemctl enable --now grafana-server
           systemctl enable --now nginx
           systemctl restart nginx

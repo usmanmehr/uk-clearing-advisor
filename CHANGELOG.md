@@ -983,3 +983,48 @@ five new functions.
   If patching needs to be guaranteed rather than just alerted-on, that's a
   separate decision about whether the instance should ever be stopped
   outside a deliberate maintenance action.
+
+## 2026-07-30 (7)
+
+### Added - boot-time + daily patch check for the Grafana instance
+- Added a simple `dnf check-update` / `dnf -y update` cron pattern here,
+  running at boot as well, to directly address the root cause behind the
+  earlier silent SSM patch failures (instance stopped at the scheduled
+  patch time - a boot-time check patches it the moment it comes back up,
+  regardless of what time that is).
+- Added to `stacks/grafana.yaml` UserData: `/opt/clearing-advisor/scripts/
+  patch-check.sh` (`dnf check-update` / `dnf -y update`, logging to
+  `/var/log/grafana-patch.log`), a systemd oneshot service
+  (`clearing-advisor-patch.service`) that runs it on every boot, and a
+  cron.d entry running it daily at 07:00 UTC too.
+- `--exclude=grafana` on both the boot and cron update commands, on
+  purpose: Grafana is installed from the external `rpm.grafana.com` repo
+  added earlier in UserData specifically to pin a known-good version - an
+  unattended blanket update pulling in a new major Grafana version
+  (possibly right before Results Day) is a real risk worth avoiding.
+- Found and fixed two real problems by actually deploying, not just from
+  reading documentation: (1) AL2023 does not include `cron` by default
+  (AWS deprecated it in favour of systemd timers) - confirmed via AWS's
+  own AL2023 user guide before assuming `cron.d` would just work, and
+  added `cronie` to the `dnf install` line; (2) the first version of the
+  systemd unit had no `[Install]` section, so `systemctl enable` silently
+  accepted it but left it `static` - meaning it looked enabled but would
+  never actually run at boot. Caught this by checking `systemctl
+  is-enabled` and `stderr` on the live instance rather than trusting the
+  command's overall success, added `[Install]` / `WantedBy=multi-user.
+  target`, and confirmed the fix produced a real symlink in
+  `multi-user.target.wants/`.
+- Deployed live via SSM to the already-running instance (the template
+  change alone would not reach it - UserData only runs once at first
+  boot, same lesson learned repeatedly this session). Verified end to end:
+  `cronie` installed and `crond` enabled; the patch script ran for real
+  and found + installed 3 genuine pending updates
+  (`amazon-ec2-net-utils`, `amazon-linux-repo-s3`,
+  `kernel-livepatch-repo-s3`); the systemd service is enabled and
+  correctly symlinked into `multi-user.target.wants/`; the cron.d entry
+  is present with the correct schedule and command.
+- This is additive to, not a replacement for, the SSM Patch Manager path
+  in `stacks/patching.yaml` (2026-07-30 (6) entry) - that one targets
+  Security/Bugfix classifications only via a patch baseline and now
+  alerts on failure; this one does a broader `dnf update` and specifically
+  covers the boot-time gap that caused the SSM path to miss 4 days.
