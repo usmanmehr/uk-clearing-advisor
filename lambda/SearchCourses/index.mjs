@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ddb, GetCommand, ScanCommand, PutCommand,
   SUBJECTS, REQUIRED_SUBJECTS, gradeTotal, resolveSubject, maskIp,
+  QUALIFICATION_TYPES, totalQualificationSlots,
   putMetric, log, json, errorResponse, checkRateLimit, checkOriginSecret, ENVIRONMENT,
 } from './shared.mjs';
 
@@ -95,23 +96,40 @@ const REGION_MATCH = {
   london: (u) => (u.location || '').toLowerCase().includes('london'),
 };
 
-const MAX_SUBJECTS = 10; // no legitimate student has more than a handful of A-levels
+const MAX_SUBJECTS = 10; // no legitimate student has more than a handful of qualification entries
+const QUALIFICATION_TYPE_KEYS = new Set(Object.keys(QUALIFICATION_TYPES));
 
+// DECISION: students entering with a BTEC (alone or mixed with A-levels) are
+// a real, common Clearing profile - a single BTEC Extended Diploma or
+// Diploma already carries the UCAS-equivalent weight of 3 or 2 A-levels on
+// its own (see QUALIFICATION_TYPES in grading.mjs). The old rule ("at least
+// 2 array entries") rejected that valid case outright. Now validated in
+// A-level-equivalent SLOTS instead of raw entry count, so "1 BTEC Extended
+// Diploma" (3 slots) passes exactly like "3 A-levels" would, while a lone
+// A-level or BTEC Extended Certificate (1 slot each) still correctly fails
+// - there still isn't enough information to compare fairly against
+// offer bands calibrated on 3 A-level-equivalent subjects.
 function validate(body) {
   if (!body || typeof body !== 'object') return 'Request body is required.';
-  if (!Array.isArray(body.subjects) || body.subjects.length < 2) {
-    return 'At least two A-level subject and grade pairs are required.';
+  if (!Array.isArray(body.subjects) || body.subjects.length === 0) {
+    return 'At least one qualification (A-level or BTEC) is required.';
   }
   if (body.subjects.length > MAX_SUBJECTS) {
-    return `A maximum of ${MAX_SUBJECTS} A-level subjects is supported.`;
+    return `A maximum of ${MAX_SUBJECTS} qualification entries is supported.`;
   }
   for (const s of body.subjects) {
     if (!s || typeof s.subject !== 'string' || typeof s.grade !== 'string') {
-      return 'Each subject must have a subject name and grade.';
+      return 'Each qualification must have a subject name and grade.';
     }
     if (s.subject.length > 100) {
       return 'Subject name is too long.';
     }
+    if (s.type != null && !QUALIFICATION_TYPE_KEYS.has(s.type)) {
+      return 'Unrecognised qualification type.';
+    }
+  }
+  if (totalQualificationSlots(body.subjects) < 2) {
+    return 'Enter at least the equivalent of two A-levels (e.g. two A-levels, or one BTEC Diploma/Extended Diploma).';
   }
   if (body.courseInterest != null && (typeof body.courseInterest !== 'string' || body.courseInterest.length > 100)) {
     return 'Course interest is too long.';
@@ -246,7 +264,12 @@ export const handler = async (event) => {
         const missing = REQUIRED_SUBJECTS[resolved].filter(
           (req) => !candidateSubjects.some((cs) => cs.toLowerCase() === req.toLowerCase()));
         if (missing.length) {
-          subjectWarning = `Usually requires A-level ${missing.join(' or ')}. Confirm with the university.`;
+          // Wording deliberately doesn't say "A-level X" - a BTEC in a
+          // relevant subject can also satisfy this at many universities,
+          // and the check itself is subject-name based, not qualification-
+          // type based (candidateSubjects below draws from every entry
+          // regardless of its type).
+          subjectWarning = `Usually requires ${missing.join(' or ')} (A-level or equivalent). Confirm with the university.`;
         }
       }
 
@@ -359,13 +382,24 @@ export const handler = async (event) => {
       results.length === 0 ? putMetric('ZeroResultsCount', 1) : Promise.resolve(),
       putMetric('CourseInterestSearched', 1, 'Count', [{ Name: 'CourseInterest', Value: resolved || 'unspecified' }]),
       putMetric('PrioritySelected', 1, 'Count', [{ Name: 'Priority', Value: priority }]),
+      // Tracks BTEC adoption now that it's supported alongside A-levels -
+      // lets the team see actual usage rather than guessing whether this
+      // feature is used at all.
+      body.subjects.some((s) => s.type && s.type !== 'alevel')
+        ? putMetric('BtecSearchCount', 1)
+        : Promise.resolve(),
     ]);
 
     // Human-readable "Subject:Grade" list (e.g. "Mathematics:A, Physics:A,
     // History:B") so Grafana can show what students are actually entering,
-    // not just the numeric grade total.
+    // not just the numeric grade total. Includes the qualification type
+    // when it isn't a plain A-level, so BTEC entries are distinguishable
+    // in the logs (e.g. "Applied Science:DD [btecDiploma]").
     const subjectsEntered = body.subjects
-      .map((s) => `${(s.subject || '').trim()}:${(s.grade || '').toUpperCase()}`)
+      .map((s) => {
+        const label = `${(s.subject || '').trim()}:${(s.grade || '').toUpperCase()}`;
+        return s.type && s.type !== 'alevel' ? `${label} [${s.type}]` : label;
+      })
       .join(', ');
 
     log('INFO', {

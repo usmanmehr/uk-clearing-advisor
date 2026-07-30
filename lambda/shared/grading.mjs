@@ -90,26 +90,108 @@ export const REQUIRED_SUBJECTS = {
 // the real published Tariff points.
 export const GRADE_VALUES = { 'A*': 56, A: 48, B: 40, C: 32, D: 24, E: 16 };
 
-// Sum of the best three A-level grades, normalised to a 3-subject-equivalent
-// score. Offer thresholds (see indicativeGrade/offerBand in SearchCourses)
-// are calibrated against three A-levels (e.g. BBB = 120 points). The form
-// allows submitting with as few as 2 A-levels (a real, common case), but a
-// plain sum of only 2 grades can never reach a 3-subject threshold - even
+// BTEC National combined-grade UCAS Tariff points, verified directly
+// against Pearson's own official table (qualifications.pearson.com/btec-
+// int-com, "BTEC and A Level UCAS points", Level 3 BTEC Nationals RQF -
+// 2017 admissions cycle onwards, still the current table for 2026 entry)
+// and independently cross-checked against ukcalculator.com - both agree
+// exactly on every value below.
+//
+// A student's overall BTEC grade is reported as ONE combined string across
+// the whole qualification (e.g. "DDM"), not as a separate grade per
+// A-level-equivalent slot the way an A-level student reports one grade per
+// subject - so these tables are keyed by the combined grade string, not a
+// single letter. Only the standard combinations Pearson actually publishes
+// points for are listed (grades are never scrambled out of descending
+// order in practice, since they come from the qualification's own grading
+// algorithm) - the frontend's dropdown is restricted to exactly these.
+//
+// Cross-check: every combined value here equals the sum of its individual
+// components at D*=56, D=48, M=32, P=16 (e.g. DDM = 48+48+32 = 128,
+// matching the table) - i.e. each qualification size is a uniform sum of
+// the same per-component values used for the single Extended Certificate,
+// which is what makes the slot-based averaging in gradeTotal() below
+// mathematically consistent with plain A-levels rather than an
+// approximation.
+export const BTEC_EXTENDED_DIPLOMA_VALUES = {
+  'D*D*D*': 168, 'D*D*D': 160, 'D*DD': 152, DDD: 144, DDM: 128,
+  DMM: 112, MMM: 96, MMP: 80, MPP: 64, PPP: 48,
+};
+export const BTEC_DIPLOMA_VALUES = {
+  'D*D*': 112, 'D*D': 104, DD: 96, DM: 80, MM: 64, MP: 48, PP: 32,
+};
+export const BTEC_EXTENDED_CERTIFICATE_VALUES = {
+  'D*': 56, D: 48, M: 32, P: 16,
+};
+
+// Qualification-type registry. `slots` is how many A-level-equivalent
+// places this qualification counts as (a BTEC Extended Diploma is sized
+// as three A-levels, a Diploma as two, an Extended Certificate as one -
+// per Pearson's own sizing) - used to fairly compare qualifications of
+// different sizes against the same 3-subject offer bands in gradeTotal().
+// `type` on a submitted subject/qualification entry looks this up; an
+// entry with no `type` (or an unrecognised one) defaults to 'alevel' so
+// every existing A-level-only request keeps working unchanged.
+export const QUALIFICATION_TYPES = {
+  alevel: { label: 'A-level', slots: 1, grades: GRADE_VALUES },
+  btecExtendedDiploma: { label: 'BTEC Extended Diploma', slots: 3, grades: BTEC_EXTENDED_DIPLOMA_VALUES },
+  btecDiploma: { label: 'BTEC Diploma', slots: 2, grades: BTEC_DIPLOMA_VALUES },
+  btecExtendedCertificate: { label: 'BTEC Extended Certificate', slots: 1, grades: BTEC_EXTENDED_CERTIFICATE_VALUES },
+};
+
+function qualificationType(entry) {
+  return QUALIFICATION_TYPES[entry && entry.type] || QUALIFICATION_TYPES.alevel;
+}
+
+// Total A-level-equivalent slots represented by a list of qualification
+// entries, regardless of whether each entry's grade is recognised - used
+// for the "enough qualifications entered" validation in SearchCourses
+// (replacing the old fixed "at least 2 A-levels" rule, since a single BTEC
+// Diploma or Extended Diploma alone is already worth 2 or 3 A-level
+// slots and is a completely normal, real Clearing applicant profile).
+export function totalQualificationSlots(subjects) {
+  return (subjects || []).reduce((sum, s) => sum + qualificationType(s).slots, 0);
+}
+
+// Sum of the best three A-level-equivalent grades, normalised to a
+// 3-subject-equivalent score. Offer thresholds (see indicativeGrade/
+// offerBand in SearchCourses) are calibrated against three A-levels (e.g.
+// BBB = 120 points).
+//
+// Each entry contributes its total Tariff points divided evenly across its
+// own `slots` (e.g. a BTEC Extended Diploma's total points / 3), producing
+// that many equal-value "slots" - so a 3-slot BTEC Extended Diploma
+// contributes up to 3 slots to the pool on its own, same as three separate
+// A-levels would, and a mixed A-level + BTEC profile is pooled fairly
+// rather than needing separate code paths. This is exact, not an
+// approximation, for every real BTEC combined grade (see the cross-check
+// note above the BTEC tables) and reduces to the original plain-A-level
+// behaviour unchanged when every entry is an A-level (slots=1 each).
+//
+// The form allows submitting with as few as 2 A-level-equivalent slots
+// total (a real, common case - two A-levels, or a single small BTEC), but
+// a plain sum of only 2 slots can never reach a 3-subject threshold - even
 // two A*s (112) falls short of the lowest offer band (BBB = 120). That
-// meant every 2-subject search silently returned zero results regardless
+// would mean every 2-slot search silently returned zero results regardless
 // of grades.
-// FIX: average the best up to 3 grades, then scale to a 3-subject total, so
-// 2 subjects are compared fairly against 3-subject offer bands rather than
-// being mathematically incapable of qualifying for anything. For 3 or more
-// subjects the result is unchanged (average of top 3 * 3 = sum of top 3).
+// FIX: average the best up to 3 slots, then scale to a 3-subject total, so
+// fewer than 3 slots are compared fairly against 3-subject offer bands
+// rather than being mathematically incapable of qualifying for anything.
+// For 3 or more slots the result is unchanged (average of top 3 * 3 = sum
+// of top 3).
 export function gradeTotal(subjects) {
-  const values = (subjects || [])
-    .map((s) => GRADE_VALUES[(s.grade || '').toUpperCase()] || 0)
-    .filter((v) => v > 0)
-    .sort((a, b) => b - a)
-    .slice(0, 3);
-  if (!values.length) return 0;
-  const average = values.reduce((a, b) => a + b, 0) / values.length;
+  const values = [];
+  for (const s of subjects || []) {
+    const qtype = qualificationType(s);
+    const total = qtype.grades[(s.grade || '').toUpperCase()] || 0;
+    if (total <= 0) continue;
+    const perSlot = total / qtype.slots;
+    for (let i = 0; i < qtype.slots; i++) values.push(perSlot);
+  }
+  values.sort((a, b) => b - a);
+  const top = values.slice(0, 3);
+  if (!top.length) return 0;
+  const average = top.reduce((a, b) => a + b, 0) / top.length;
   return Math.round(average * 3);
 }
 

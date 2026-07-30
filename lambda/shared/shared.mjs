@@ -21,6 +21,8 @@ import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwat
 // keeps working unchanged.
 export {
   SUBJECTS, SUBJECT_NAMES, REQUIRED_SUBJECTS, GRADE_VALUES,
+  BTEC_EXTENDED_DIPLOMA_VALUES, BTEC_DIPLOMA_VALUES, BTEC_EXTENDED_CERTIFICATE_VALUES,
+  QUALIFICATION_TYPES, totalQualificationSlots,
   gradeTotal, levenshtein, resolveSubject, maskIp,
 } from './grading.mjs';
 

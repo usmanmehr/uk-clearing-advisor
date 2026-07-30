@@ -104,7 +104,7 @@ input[type=text]:focus, select:focus {
 .help { color: var(--muted); font-size: .82rem; margin: .35rem 0 0; }
 fieldset { border: 1px solid var(--line); border-radius: 10px; margin: 0 0 1.1rem; padding: 1rem; }
 legend { font-weight: 700; color: var(--navy); padding: 0 .4rem; }
-.alevel-row { display: grid; grid-template-columns: 1fr 110px auto; gap: .6rem; margin-bottom: .6rem; align-items: end; }
+.alevel-row { display: grid; grid-template-columns: 1.3fr 1fr 130px auto; gap: .6rem; margin-bottom: .6rem; align-items: end; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem; align-items: end; }
 .checkbox { display: flex; align-items: center; gap: .5rem; min-height: 44px; }
 .checkbox input[type=checkbox] {
@@ -194,7 +194,8 @@ button, a, input, select, label { touch-action: manipulation; }
   .stat-row { gap: 1rem; }
 }
 @media (max-width: 520px) {
-  .alevel-row { grid-template-columns: 1fr 84px; grid-template-rows: auto auto; }
+  .alevel-row { grid-template-columns: 1fr 84px; grid-template-rows: auto auto auto; }
+  .alevel-row .field:first-child { grid-column: 1 / -1; }
   .alevel-row .remove { grid-column: 1 / -1; justify-self: start; }
   .hero-stats dt { font-size: 1.4rem; }
   .grid { grid-template-columns: 1fr; }
