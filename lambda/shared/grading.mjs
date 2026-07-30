@@ -90,12 +90,37 @@ export const REQUIRED_SUBJECTS = {
 // the real published Tariff points.
 export const GRADE_VALUES = { 'A*': 56, A: 48, B: 40, C: 32, D: 24, E: 16 };
 
-// BTEC National combined-grade UCAS Tariff points, verified directly
-// against Pearson's own official table (qualifications.pearson.com/btec-
-// int-com, "BTEC and A Level UCAS points", Level 3 BTEC Nationals RQF -
-// 2017 admissions cycle onwards, still the current table for 2026 entry)
-// and independently cross-checked against ukcalculator.com - both agree
-// exactly on every value below.
+// BTEC National combined-grade UCAS Tariff points, verified against THREE
+// independent sources, all agreeing exactly:
+//   1. Pearson's own official table (qualifications.pearson.com/btec-int-
+//      com, "BTEC and A Level UCAS points", Level 3 BTEC Nationals RQF -
+//      2017 admissions cycle onwards, still the current table for 2026
+//      entry).
+//   2. ukcalculator.com's independently published 2026 tariff calculator.
+//   3. Oxford Brookes University's own official admissions pages
+//      (brookes.ac.uk/.../ucas-tariff/achieving-112-points and
+//      achieving-128-points), which state "BTEC Extended Diploma - Grades
+//      DMM" under their 112-points page and "...Grades DDM" under their
+//      128-points page - independently confirming DMM=112 and DDM=128.
+//
+// NOTE on a discrepancy investigated and deliberately NOT incorporated:
+// those same Brookes pages also list mixed "1 A-level plus BTEC Diploma"
+// example combinations (e.g. "Grades B+DM" for their 112-points page,
+// "Grades A+DD" for their 128-points page) that do NOT arithmetically sum
+// to 112/128 using this table's values, and are not even self-consistent
+// with each other (one implies BTEC Diploma grade DD=88, the other implies
+// DD=80 - impossible for a single official value). Every PURE A-level
+// example on both of those same pages (e.g. "BBC"=112, "ABB"=128) checks
+// out exactly against GRADE_VALUES above. This strongly indicates those
+// specific mixed-qualification bullet points are simplified/illustrative
+// marketing copy on a general admissions page rather than precise Tariff
+// arithmetic (common on university sites, which are written for
+// prospective students, not as a calculator) - not evidence that the
+// BTEC_DIPLOMA_VALUES table below is wrong. Kept here as a documented,
+// deliberate decision rather than silently ignored, since three
+// independent, mutually-consistent sources (including this same page's
+// own Extended Diploma examples) outweigh one internally-inconsistent
+// secondary source.
 //
 // A student's overall BTEC grade is reported as ONE combined string across
 // the whole qualification (e.g. "DDM"), not as a separate grade per
@@ -112,7 +137,8 @@ export const GRADE_VALUES = { 'A*': 56, A: 48, B: 40, C: 32, D: 24, E: 16 };
 // the same per-component values used for the single Extended Certificate,
 // which is what makes the slot-based averaging in gradeTotal() below
 // mathematically consistent with plain A-levels rather than an
-// approximation.
+// approximation. This is verified exhaustively, not just asserted, by
+// shared.test.mjs's "COMPONENT SUM VERIFICATION" tests below.
 export const BTEC_EXTENDED_DIPLOMA_VALUES = {
   'D*D*D*': 168, 'D*D*D': 160, 'D*DD': 152, DDD: 144, DDM: 128,
   DMM: 112, MMM: 96, MMP: 80, MPP: 64, PPP: 48,

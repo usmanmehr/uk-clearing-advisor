@@ -575,6 +575,246 @@
         },
         "overrides": []
       }
+    },
+    {
+      "id": 15,
+      "title": "Qualification path: A-level only vs BTEC only vs Mixed",
+      "type": "piechart",
+      "description": "Which of the three real applicant profiles students actually submit. 'BTEC only' and 'Mixed' were impossible to submit before BTEC support was added (2026-07-30) - this panel is how adoption of that feature is actually measured, not guessed at.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 66
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "ClearingAdvisor",
+          "metricName": "QualificationPathSearched",
+          "statistic": "Sum",
+          "period": "86400",
+          "dimensions": {
+            "QualificationPath": "alevel-only"
+          },
+          "label": "A-level only",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        },
+        {
+          "refId": "B",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "ClearingAdvisor",
+          "metricName": "QualificationPathSearched",
+          "statistic": "Sum",
+          "period": "86400",
+          "dimensions": {
+            "QualificationPath": "btec-only"
+          },
+          "label": "BTEC only",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        },
+        {
+          "refId": "C",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "ClearingAdvisor",
+          "metricName": "QualificationPathSearched",
+          "statistic": "Sum",
+          "period": "86400",
+          "dimensions": {
+            "QualificationPath": "mixed"
+          },
+          "label": "Mixed (A-level + BTEC)",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "Qualification path trend over time",
+      "type": "timeseries",
+      "description": "Daily count of searches by qualification path - shows whether BTEC/mixed adoption is growing, shrinking, or flat over the Clearing period.",
+      "timeFrom": "30d",
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 66
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "ClearingAdvisor",
+          "metricName": "QualificationPathSearched",
+          "statistic": "Sum",
+          "period": "86400",
+          "dimensions": {
+            "QualificationPath": "alevel-only"
+          },
+          "label": "A-level only",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        },
+        {
+          "refId": "B",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "ClearingAdvisor",
+          "metricName": "QualificationPathSearched",
+          "statistic": "Sum",
+          "period": "86400",
+          "dimensions": {
+            "QualificationPath": "btec-only"
+          },
+          "label": "BTEC only",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        },
+        {
+          "refId": "C",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "ClearingAdvisor",
+          "metricName": "QualificationPathSearched",
+          "statistic": "Sum",
+          "period": "86400",
+          "dimensions": {
+            "QualificationPath": "mixed"
+          },
+          "label": "Mixed (A-level + BTEC)",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "title": "Most popular BTEC qualification size",
+      "type": "barchart",
+      "description": "Among searches that included at least one BTEC entry, which size (Extended Diploma / Diploma / Extended Certificate) is most common. Reads btecTypesUsed from the search log line (SearchCourses), not a metric - this is a genuinely low-frequency breakdown so a Logs Insights query is cheaper than a dedicated per-type metric.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 74
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "eu-west-2",
+          "logGroupNames": [
+            "/aws/lambda/ClearingAdvisor-SearchCourses"
+          ],
+          "expression": "filter msg = 'search' and btecTypesUsed != 'none' | stats count(*) as searches by btecTypesUsed | sort searches desc",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-BlPu"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 18,
+      "title": "What students want to study, by qualification path",
+      "type": "table",
+      "description": "Cross-tab of course interest against how the student is getting there (A-level only / BTEC only / mixed) - answers 'which path do students on subject X actually take', not just 'what's popular overall'.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 74
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "eu-west-2",
+          "logGroupNames": [
+            "/aws/lambda/ClearingAdvisor-SearchCourses"
+          ],
+          "expression": "filter msg = 'search' and courseInterest != 'unspecified' | stats count(*) as searches by courseInterest, qualificationPath | sort searches desc | limit 50",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "title": "A-level subjects and grades entered, by qualification path",
+      "type": "table",
+      "description": "Same as the existing 'A-level subjects and grades entered' panel, but split by qualification path - shows whether the same subject is being approached via A-level or BTEC.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 82
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "eu-west-2",
+          "logGroupNames": [
+            "/aws/lambda/ClearingAdvisor-SearchCourses"
+          ],
+          "expression": "filter msg = 'search' and ispresent(subjectsEntered) | stats count(*) as searches by qualificationPath, subjectsEntered | sort searches desc | limit 30",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          }
+        }
+      ]
     }
   ],
   "refresh": "1m"

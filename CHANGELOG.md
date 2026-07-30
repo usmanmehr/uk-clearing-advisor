@@ -4,6 +4,68 @@ All notable changes to UK Clearing Advisor are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## 2026-07-30 (2)
+
+### Added - exhaustive verification of grade-conversion accuracy
+- Followed up a request to make results "99.99% accurate" by separating
+  what's actually achievable from what isn't. Grade-to-UCAS-points
+  conversion (A-level/BTEC tariff arithmetic) is pure logic that CAN be
+  verified to near-100% confidence - and now is. Whether a specific
+  university/course is actually open in Clearing at specific grades right
+  now is NOT achievable to that confidence with this system's current
+  architecture (seeded reference data + a heuristic scraper, not a live
+  UCAS Clearing feed) - no amount of code hardening changes that, and
+  claiming otherwise in the UI would be a false promise to students. This
+  entry covers the part that's real; the frontend copy change below covers
+  making sure the site doesn't imply the other part is more certain than
+  it is.
+- Found and independently verified a THIRD source for the BTEC Tariff
+  tables (previously two: Pearson official + ukcalculator.com). Oxford
+  Brookes University's own official admissions pages
+  (achieving-112-points / achieving-128-points) state "BTEC Extended
+  Diploma - Grades DMM" and "...Grades DDM" respectively, confirming
+  DMM=112 and DDM=128 exactly. Also investigated and deliberately did NOT
+  incorporate a discrepancy: those same Brookes pages' MIXED A-level+BTEC
+  example combinations don't arithmetically check out and aren't even
+  self-consistent with each other, while every PURE A-level example on the
+  same pages checks out exactly - strong evidence those specific bullets
+  are simplified marketing copy, not precise Tariff arithmetic. Documented
+  in-line in `grading.mjs` as a deliberate decision, not silently ignored.
+- Added exhaustive tests to `shared.test.mjs` that PROVE correctness
+  programmatically rather than spot-checking: every one of the 21 BTEC
+  grade values across all three tables is verified against its component
+  decomposition (e.g. DDM = D + D + M = 48+48+32 = 128), every table is
+  checked for strictly-descending values with no duplicates/negatives, and
+  every BTEC Extended Diploma grade is verified to produce an exact
+  (zero-drift) `gradeTotal()` result when submitted alone.
+
+### Changed - front-page accuracy messaging is now explicit about what's exact vs. estimated
+- The "Good to know" card previously blended exact facts (grade
+  conversion) and estimates (course availability) into one paragraph.
+  Split into two clearly labelled parts: "Exact" (Tariff point
+  conversion, official published tables) and "Estimated" (everything about
+  course/university availability, which needs a live UCAS feed this
+  project doesn't have yet).
+
+### Added - qualification-path analytics in Grafana
+- `SearchCourses` now logs a structured `subjectsByType` array (subject +
+  grade + qualification type per entry, not just a joined string) and two
+  new fields: `qualificationPath` (`alevel-only` / `btec-only` / `mixed`)
+  and `btecTypesUsed`.
+- Added a `QualificationPathSearched` CloudWatch metric, dimensioned by
+  path - the three real applicant profiles are now something you can
+  actually report on with real usage numbers, not guess at.
+- `grafana/dashboard.json`: 5 new panels - qualification path pie chart,
+  qualification path trend over time, most popular BTEC size, course
+  interest by qualification path (cross-tab), and subjects/grades entered
+  by qualification path.
+- Deployed live: verified the new metric and log fields with a real
+  mixed-qualification search against production, and re-provisioned the
+  Grafana dashboard on the running instance (dashboard.json only loads at
+  boot via UserData, same lesson learned with the custom-domain work
+  earlier - re-uploaded to S3 then re-fetched + restarted Grafana via SSM,
+  not just a template redeploy).
+
 ## 2026-07-30
 
 ### Added - BTEC qualification support alongside A-levels

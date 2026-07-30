@@ -372,6 +372,25 @@ export const handler = async (event) => {
 
     const totalLatencyMs = Date.now() - started;
 
+    // Qualification-path analytics: lets Grafana answer "which path do
+    // students actually take" (A-level only / BTEC only / mixed), "which
+    // BTEC size is most common", and "which subjects are popular under
+    // each qualification type" - all real, measurable usage data (unlike
+    // course-availability accuracy, this is something we can actually
+    // report on precisely, since it's just what was submitted).
+    const typesUsed = [...new Set(body.subjects.map((s) => (s.type && QUALIFICATION_TYPE_KEYS.has(s.type)) ? s.type : 'alevel'))];
+    const hasAlevel = typesUsed.includes('alevel');
+    const hasBtec = typesUsed.some((t) => t !== 'alevel');
+    // 'alevel-only' | 'btec-only' | 'mixed' - a single low-cardinality
+    // dimension safe to use on a CloudWatch metric (unlike per-subject
+    // values, which would be high-cardinality and expensive as a metric
+    // dimension - those go in the log fields below for Logs Insights
+    // querying instead, not as metric dimensions).
+    const qualificationPath = hasAlevel && hasBtec ? 'mixed' : hasBtec ? 'btec-only' : 'alevel-only';
+    // The specific BTEC size(s) used, if any (e.g. "btecDiploma"), joined
+    // for the rare case of multiple BTEC entries in one search.
+    const btecTypesUsed = typesUsed.filter((t) => t !== 'alevel').join('+') || 'none';
+
     // STEP 10 - metrics.
     await Promise.all([
       putMetric('SearchCount', 1),
@@ -385,9 +404,10 @@ export const handler = async (event) => {
       // Tracks BTEC adoption now that it's supported alongside A-levels -
       // lets the team see actual usage rather than guessing whether this
       // feature is used at all.
-      body.subjects.some((s) => s.type && s.type !== 'alevel')
-        ? putMetric('BtecSearchCount', 1)
-        : Promise.resolve(),
+      hasBtec ? putMetric('BtecSearchCount', 1) : Promise.resolve(),
+      // Which of the three paths students actually take - the core metric
+      // for the "which path do students want to take" analysis requested.
+      putMetric('QualificationPathSearched', 1, 'Count', [{ Name: 'QualificationPath', Value: qualificationPath }]),
     ]);
 
     // Human-readable "Subject:Grade" list (e.g. "Mathematics:A, Physics:A,
@@ -401,11 +421,23 @@ export const handler = async (event) => {
         return s.type && s.type !== 'alevel' ? `${label} [${s.type}]` : label;
       })
       .join(', ');
+    // Per-subject-per-type breakdown as its own structured field (rather
+    // than only the combined subjectsEntered string above) so Logs
+    // Insights can group directly on qualification type without string
+    // parsing - e.g. "which subjects are most popular among BTEC Extended
+    // Diploma applicants" is a direct `stats count(*) by qualificationType,
+    // subject` query against this field's exploded rows, not a regex.
+    const subjectsByType = body.subjects.map((s) => ({
+      subject: (s.subject || '').trim(),
+      grade: (s.grade || '').toUpperCase(),
+      qualificationType: (s.type && QUALIFICATION_TYPE_KEYS.has(s.type)) ? s.type : 'alevel',
+    }));
 
     log('INFO', {
       level: 'INFO', msg: 'search', requestId, sourceIp: maskedIp,
       courseInterest: resolved || 'unspecified', subjectCount: body.subjects.length,
-      subjectsEntered, gradeTotal: candidateTotal,
+      subjectsEntered, subjectsByType, gradeTotal: candidateTotal,
+      qualificationPath, btecTypesUsed,
       priority, locationFilter: body.location || 'any', russellGroupOnly: !!body.russellGroupOnly,
       cacheHit: false, totalLatencyMs,
       resultsCount: results.length, usingFallback: true, environment: ENVIRONMENT,
