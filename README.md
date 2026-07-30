@@ -9,7 +9,10 @@ plus a Grafana analytics stack showing where visitors come from.
 Built on AWS with CloudFormation (S3, CloudFront, WAF, API Gateway, Lambda,
 DynamoDB, EventBridge, CloudWatch, Cognito, EC2 for Grafana).
 
-See [CHANGELOG.md](CHANGELOG.md) for what's changed between releases.
+See [CHANGELOG.md](CHANGELOG.md) for what's changed between releases, and
+[WELL-ARCHITECTED.md](WELL-ARCHITECTED.md) for a structured review against
+the AWS Well-Architected Framework's six pillars, with file-cited findings
+and a prioritised list of fixes.
 
 ![Architecture](architecture.png)
 
