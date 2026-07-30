@@ -1,0 +1,20 @@
+# Local, personal denylist for scripts/check_sensitive_content.py.
+#
+# Copy this file to .guardrails/local-denylist.txt (that exact filename is
+# git-ignored - see .gitignore) and add exact strings specific to you or
+# this AWS account that should never be committed: your real name, your
+# AWS account ID, personal script/file paths, internal hostnames, etc.
+#
+# One literal string per line. Blank lines and lines starting with # are
+# ignored. Matching is exact-substring (case-sensitive), not regex - special
+# characters in your entries are escaped automatically by the checker.
+#
+# This file (the .example one) is safe to commit since it has no real
+# values. The real .guardrails/local-denylist.txt is never committed -
+# that's the whole point: the values it protects never touch the repo,
+# not even in this config file.
+#
+# Example entries (replace with your own):
+# Jane Example
+# 123456789012
+# /opt/jane-personal-scripts/

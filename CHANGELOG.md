@@ -1028,3 +1028,47 @@ five new functions.
   Security/Bugfix classifications only via a patch baseline and now
   alerts on failure; this one does a broader `dnf update` and specifically
   covers the boot-time gap that caused the SSM path to miss 4 days.
+
+## 2026-07-30 (8)
+
+### Added - guardrail against committing secrets/personal data
+- Following the git history rewrite earlier today to scrub personal
+  content that had slipped into a commit, added an actual enforcement
+  mechanism rather than relying on remembering not to repeat it.
+- `scripts/check_sensitive_content.py` (zero dependencies, stdlib only):
+  scans added lines for AWS access key ID patterns, private key headers,
+  a weak-static-placeholder-secret pattern, and hardcoded 12-digit AWS
+  account IDs inside ARNs. Supports checking staged changes (pre-commit),
+  a commit range (CI), or the whole tree (`--all`, manual audit) -
+  verified all three modes directly, including a real AWS-key-shaped
+  string in a throwaway test repo to confirm it actually blocks, not just
+  that it runs without error.
+- Found and fixed a real self-referential false positive by watching CI
+  actually run against this change's own PR: the checker's own source
+  necessarily contains the literal pattern text it's built to detect (the
+  weak-placeholder-secret pattern above), which the checker then correctly
+  flagged in itself. Excluded the checker's own file from scanning
+  (`EXCLUDED_PATHS` in the script) rather than weakening the pattern -
+  the pattern needs to keep working on every other file, this is a
+  one-file, well-understood exception, not a general escape hatch.
+- Split personal values into a separate, git-ignored local denylist
+  (`.guardrails/local-denylist.txt`, `.example` version committed with no
+  real values) rather than hardcoding any real name/account ID into the
+  checker itself - a checker script living in a public repo can't contain
+  the exact values it's meant to keep out of that same repo without
+  recreating the problem it's solving.
+- Added a CI job (`sensitive-content-check` in
+  `.github/workflows/cfn-lint.yml`) that runs the checker against the
+  diff on every push/PR - this is the real backstop, enforced regardless
+  of whether a contributor set up the local hook.
+- Added `scripts/hooks/pre-commit` (tracked in git, unlike `.git/hooks/`
+  which isn't) for local, faster feedback - install once per clone via
+  `git config core.hooksPath scripts/hooks`, documented in
+  `CONTRIBUTING.md`.
+- Fixed a real bug found only by running it: the script initially used
+  `list[tuple[str, str]]` built-in generic syntax (Python 3.9+ only) and
+  crashed on this sandbox's Python 3.7 - switched to `typing.List`/`Tuple`
+  with `from __future__ import annotations` for compatibility with older
+  interpreters a contributor's local `python3` might be.
+- Verified clean against the full current repo (`--all`, exit 0) before
+  committing, so this guardrail doesn't itself start CI off broken.

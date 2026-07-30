@@ -30,3 +30,32 @@ jobs:
         # Zero dependencies - uses Node's built-in test runner, matching the
         # rest of the project's zero-npm-dependency approach.
         run: node --test lambda/shared/*.test.mjs
+
+  sensitive-content-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Block secrets / personal data in this change
+        # Only checks lines added by this PR/push, not the whole repo's
+        # history - a pre-existing match elsewhere shouldn't block an
+        # unrelated PR. Runs regardless of whether the contributor
+        # installed the local pre-commit hook (scripts/hooks/pre-commit) -
+        # this is the real backstop, the hook is just a faster local
+        # feedback loop. Uses merge-base rather than the PR's recorded
+        # base SHA directly - if the base branch's history is ever
+        # rewritten (e.g. after a scrub like this feature's own), the
+        # recorded SHA can point at a commit no longer reachable from the
+        # rewritten branch, which would otherwise make every historical
+        # line look newly added.
+        run: |
+          BASE_REF="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$BASE_REF" ] || ! git cat-file -e "$BASE_REF" 2>/dev/null; then
+            BASE_REF="HEAD~1"
+          fi
+          MERGE_BASE="$(git merge-base "$BASE_REF" HEAD 2>/dev/null || echo "$BASE_REF")"
+          python3 scripts/check_sensitive_content.py --diff-against "$MERGE_BASE"
