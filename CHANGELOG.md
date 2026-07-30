@@ -858,3 +858,79 @@ five new functions.
   copy. The surrounding sentences were kept ("No sign-up" stays true) so the
   copy still reads naturally.
 - No functional/logging change - this is a copy-accuracy fix only.
+
+## 2026-07-30 (5)
+
+### Fixed - removed `change-me` template defaults on shared origin secrets
+- `stacks/compute.yaml`, `stacks/cdn.yaml`, and `stacks/grafana.yaml` each
+  had `Default: change-me` on their `ApiOriginSecret`/`OriginSecret`
+  parameter. `deploy.sh` always generates and passes a real secret
+  explicitly, so this was never live in production, but a deploy that
+  forgot to pass the parameter (a manual `cloudformation deploy`, a
+  staging clone, a typo dropping `--parameter-overrides`) would have
+  silently fallen back to a guessable literal string instead of failing.
+  Removed the defaults (now required, `MinLength: 20`) so a forgotten
+  override fails the deploy loudly instead of quietly opening the
+  CloudFront-bypass check. `stacks/grafana-front.yaml`'s `OriginSecret`
+  already had no default - the other three now match it.
+- Rotated the live app-pair secret (`compute` + `cdn` stacks) to a fresh
+  64-char hex value, verified live: the new value matches exactly across
+  the `GetSubjects` Lambda's env var and the CloudFront distribution's
+  `X-Origin-Verify` origin custom header after both stacks redeployed.
+- Did NOT rotate the Grafana-pair secret (`grafana` + `grafana-front`
+  stacks) in this pass. Checking the live `grafana` stack found it has
+  real structural drift from the current `stacks/grafana.yaml` template -
+  `aws cloudformation get-template-summary` shows the deployed stack has
+  no `OriginSecret`/`FrontDomain` parameters at all, because the
+  2026-07-29 (2) custom-domain work was applied by hand via SSM directly
+  to the running EC2 instance, not through a stack update (documented at
+  the time). Running `cloudformation deploy` against a stack that far out
+  of sync with its own template risks CloudFormation replacing the EC2
+  instance to reconcile it, which would mean real Grafana downtime for a
+  parameter-only change - deliberately deferred rather than risked without
+  a reviewed change set first.
+
+### Changed - Grafana dashboard panel order
+- Moved "Geo-blocked requests (non-UK) - WAF" and "Security blocks over
+  time (WAF rules)" to the bottom of `grafana/dashboard.json`, below the
+  usage/qualification-path panels, per feedback that security/WAF metrics
+  are lower-priority for day-to-day reading than usage data. Every panel
+  below the old slot shifted up 8 grid units to close the gap; verified
+  the resulting layout has no y-overlaps or gaps before deploying.
+- Considered "by county" for "Requests by UK region" and "What people are
+  searching for, by region" (also requested) and did NOT implement it -
+  checked live production log data via CloudWatch Logs Insights and
+  confirmed CloudFront's viewer geolocation headers only resolve to UK
+  *nation* (England/Scotland/Wales/Northern Ireland) for the region field,
+  not county. Relabelling the existing panels "by county" would have
+  mislabelled the same nation-level data. A real county breakdown would
+  need either a city-to-county lookup table or lat/lon-to-boundary
+  matching added on top of the existing geoCity/geoLat/geoLon fields -
+  scoped as a separate future addition, not folded into a panel reorder.
+- Deployed live via the established pattern (S3 upload + SSM
+  `AWS-RunShellScript` on the Grafana EC2 instance, since `dashboard.json`
+  only loads at boot) - verified `Status: Success` and Grafana restarted
+  `active`.
+
+### Changed - WELL-ARCHITECTED.md: reclassified the Grafana origin finding
+- The review previously listed the CloudFront-to-Grafana HTTP origin
+  under Security "Good" (as a documented, deliberate compromise). Moved
+  it to "Risk" as **H2**: admin cookies and the origin secret cross the
+  CloudFront-to-EC2 hop as plaintext HTTP, since CloudFront requires a
+  CA-trusted certificate for HTTPS custom origins and the instance's only
+  reachable hostname is a self-signed `nip.io` wrapper.
+- Evaluated two real fixes: AWS CloudFront VPC Origins (GA Nov 2024,
+  confirmed available in this account/region via
+  `aws cloudfront list-vpc-origins` and the `AWS::CloudFront::VpcOrigin`
+  CloudFormation resource) would need the instance moved to a private
+  subnet plus a NAT Gateway or VPC endpoints for outbound traffic - a real
+  architecture change and ongoing cost, rejected as disproportionate for
+  infrastructure that runs a few weeks a year. A Let's Encrypt certificate
+  via DNS-01 against the real `monitor.mehrs.net` domain (already in
+  Route 53) is the smaller, scoped fix - swap the self-signed cert, flip
+  `OriginProtocolPolicy` to `https-only`, add a renewal job.
+- Decision: deliberately deferred to before the 2027 Results Day cycle,
+  not dropped. Current compensating controls (CloudFront-IP-only security
+  group on port 80, the shared `X-Origin-Verify` secret) remain the
+  interim mitigation - added to the prioritised recommendations list
+  (#10) with the target timing, so it doesn't only exist in chat history.

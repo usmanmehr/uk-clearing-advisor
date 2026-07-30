@@ -20,13 +20,15 @@ Parameters:
   ApiOriginSecret:
     Type: String
     NoEcho: true
-    Default: change-me
+    MinLength: 20
     Description: >
       Shared secret CloudFront sends as X-Origin-Verify. Every API-facing
       Lambda (SearchCourses, GetSubjects, GetUniversities, GetScholarships,
       GenerateExport) checks this and rejects requests that skip CloudFront
       and hit execute-api directly. Must match the ApiOriginSecret used in
-      the cdn stack.
+      the cdn stack. No default on purpose - a deploy that forgets to pass
+      this must fail loudly rather than silently falling back to a guessable
+      placeholder (deploy.sh always generates/passes a real one).
 
 Mappings: {}
 

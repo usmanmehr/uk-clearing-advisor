@@ -142,15 +142,13 @@ exposure worth fixing before Results Day traffic.
 - `GET /health` deliberately skips the origin-secret check (documented in
   `HealthFunction`/`shared.mjs`) so external uptime monitors can reach it
   directly - a scoped, intentional exception rather than an oversight.
-- Grafana's own attack surface is well thought through: nginx self-signed
-  TLS + `X-Origin-Verify` secret-gated HTTP origin (can't be HTTPS to
-  CloudFront since the cert is self-signed, so HTTP+secret+SG-lock is the
-  documented compromise - `ARCHITECTURE.md`), Cognito OAuth for login, an
-  IAM instance role instead of static keys, and a security group that opens
-  port 80 only to the CloudFront origin-facing prefix list and port 443 only
-  to a single named admin IP (`stacks/grafana-front.yaml`). `server_tokens
-  off` was added after a pen test found nginx was disclosing its exact
-  version (`CHANGELOG.md` 2026-07-23 pen test entry).
+- Most of Grafana's attack surface is well thought through even though the
+  CloudFront-to-origin hop itself is not (see H2 below): Cognito OAuth for
+  login, an IAM instance role instead of static keys, and a security group
+  that opens port 80 only to the CloudFront origin-facing prefix list and
+  port 443 only to a single named admin IP (`stacks/grafana-front.yaml`).
+  `server_tokens off` was added after a pen test found nginx was disclosing
+  its exact version (`CHANGELOG.md` 2026-07-23 pen test entry).
 - A real, active AWS access key was found in plaintext on the developer
   workstation (`~/.aws/credentials`, `.bash_history`) during the pen test.
   It was confirmed absent from the git repository and its history, correctly
@@ -158,6 +156,33 @@ exposure worth fixing before Results Day traffic.
   documented rather than silently ignored.
 
 **Risk**
+- **H2 - CloudFront-to-Grafana origin is plaintext HTTP over the public
+  internet; admin cookies and the origin secret travel unencrypted**
+  (`stacks/grafana-front.yaml`, `OriginProtocolPolicy: http-only`). The root
+  cause: CloudFront will only trust an HTTPS custom origin if its
+  certificate is issued by a CA on Mozilla's included list, and the
+  Grafana EC2 instance's only reachable hostname is a `nip.io` wrapper
+  around its Elastic IP (`stacks/grafana.yaml`), so nginx's cert there is
+  self-signed and CloudFront would reject it over HTTPS. HTTP +
+  `X-Origin-Verify` secret header + a security-group lock to CloudFront's
+  own IP range is the current compensating control, not the fix.
+  Considered and evaluated two real fixes - AWS CloudFront VPC Origins
+  (GA Nov 2024, confirmed available in this account/region via
+  `aws cloudfront list-vpc-origins`), and a Let's Encrypt cert issued via
+  DNS-01 against the real `monitor.mehrs.net` domain already in Route 53 -
+  and rejected doing either right now. VPC Origins needs the instance
+  moved to a private subnet plus a NAT Gateway or VPC endpoints for
+  outbound package/Cognito calls - a genuine architecture change and
+  ongoing cost for infrastructure that exists for a few weeks a year.
+  Let's Encrypt is a smaller, scoped fix (swap the self-signed cert,
+  flip `OriginProtocolPolicy` to `https-only`, add a renewal job) and is
+  the one worth doing, but not mid-review with Results Day traffic on the
+  horizon. **Deferred deliberately to before the 2027 Results Day cycle**,
+  not dropped - tracked here rather than only in chat so it doesn't get
+  forgotten. Current compensating controls (CloudFront-IP-only ingress via
+  the security group, and the shared secret) remain in place in the
+  meantime; rotating that secret periodically is the practical mitigation
+  until the real fix lands.
 - **`checkOriginSecret()` fails open, and the default value is a placeholder
   that looks like a real secret.** `lambda/shared/shared.mjs` line 89:
   `if (!API_ORIGIN_SECRET) return true;` - if the env var is empty, every
@@ -428,6 +453,16 @@ but worth stating plainly rather than skipping.
 9. **Consider Graviton (`arm64` Lambda architecture, `t4g` for Grafana EC2)**
    - a genuinely low-effort, low-risk change given the codebase has no
    native dependencies, with both cost and sustainability upside.
+10. **H2 - encrypt the CloudFront-to-Grafana origin hop** - deliberately
+   scheduled for before the 2027 Results Day cycle, not this year. Likely
+   fix: a Let's Encrypt certificate via DNS-01 against `monitor.mehrs.net`
+   (already a real Route 53 domain), then flip `stacks/grafana-front.yaml`'s
+   `OriginProtocolPolicy` to `https-only`. CloudFront VPC Origins was
+   considered and rejected as disproportionate for infrastructure that only
+   runs a few weeks a year (needs a private subnet + NAT/VPC endpoints).
+   Current compensating controls (CloudFront-IP-only security group, shared
+   secret) stay in place until then - rotate the secret periodically as the
+   interim mitigation.
 
 ## Overall verdict
 

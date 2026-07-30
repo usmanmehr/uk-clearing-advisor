@@ -14,12 +14,15 @@ Parameters:
   ApiOriginSecret:
     Type: String
     NoEcho: true
-    Default: change-me
+    MinLength: 20
     Description: >
       Shared secret CloudFront sends to the API origin as X-Origin-Verify.
       Each Lambda behind the API checks this and rejects direct execute-api
       calls that skip CloudFront/WAF (geo-block, edge rate limiting). Must
-      match the ApiOriginSecret used in the compute stack.
+      match the ApiOriginSecret used in the compute stack. No default on
+      purpose - a deploy that forgets to pass this must fail loudly rather
+      than silently falling back to a guessable placeholder (deploy.sh
+      always generates/passes a real one).
   DomainName:
     Type: String
     Default: ''
