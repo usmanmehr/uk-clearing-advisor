@@ -187,7 +187,8 @@ exposure worth fixing before Results Day traffic.
   that looks like a real secret.** `lambda/shared/shared.mjs` line 89:
   `if (!API_ORIGIN_SECRET) return true;` - if the env var is empty, every
   request is treated as verified. The template default in
-  `stacks/compute.yaml` is literally `change-me`. If a stack is ever deployed
+  `stacks/compute.yaml` was a short, static placeholder string, not a real
+  secret. If a stack is ever deployed
   without explicitly overriding `ApiOriginSecret` (a plausible mistake in a
   staging environment, a forked deploy, or a parameter typo), the origin
   check silently becomes a no-op rather than failing loudly. `deploy.sh` does
@@ -420,11 +421,14 @@ but worth stating plainly rather than skipping.
 
 ## Prioritised recommendations
 
-1. **Fix `checkOriginSecret()`'s fail-open default** - either make the
-   `ApiOriginSecret` parameter reject the literal `change-me` value (a CFN
-   `Rule`/`AllowedPattern`), or change `checkOriginSecret()` to fail closed
-   when the secret is unset. Low effort, closes a real (if currently
-   unexploited) gap.
+1. ~~Fix `checkOriginSecret()`'s fail-open default~~ - **Done** (2026-07-30):
+   removed the weak placeholder default from `ApiOriginSecret`/
+   `OriginSecret` across `compute.yaml`, `cdn.yaml`, and `grafana.yaml` and
+   made the parameter required with `MinLength: 20`, so a forgotten
+   override now fails the deploy loudly instead of accepting a guessable
+   value. Live app-pair secret (compute+cdn) rotated and verified in sync;
+   the Grafana-pair secret was deliberately left alone due to unrelated
+   stack drift (see the 2026-07-30 (5) changelog entry).
 2. **Add `DeletionPolicy: Retain` to `ChangeLogTable`** at minimum (it's an
    audit trail, not a cache) and add `PointInTimeRecoverySpecification` to
    `RateLimitsTable` for consistency with the other 7 tables.

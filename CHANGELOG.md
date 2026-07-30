@@ -861,10 +861,11 @@ five new functions.
 
 ## 2026-07-30 (5)
 
-### Fixed - removed `change-me` template defaults on shared origin secrets
+### Fixed - removed weak placeholder template defaults on shared origin secrets
 - `stacks/compute.yaml`, `stacks/cdn.yaml`, and `stacks/grafana.yaml` each
-  had `Default: change-me` on their `ApiOriginSecret`/`OriginSecret`
-  parameter. `deploy.sh` always generates and passes a real secret
+  had a short, static placeholder string as the `Default` on their
+  `ApiOriginSecret`/`OriginSecret` parameter. `deploy.sh` always generates
+  and passes a real secret
   explicitly, so this was never live in production, but a deploy that
   forgot to pass the parameter (a manual `cloudformation deploy`, a
   staging clone, a typo dropping `--parameter-overrides`) would have
