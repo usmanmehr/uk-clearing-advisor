@@ -10,6 +10,22 @@ are welcome - bug fixes, new data sources, documentation, and features.
 - Follow the existing style: plain British English in copy, no emojis, hyphens
   not em dashes.
 
+## Guardrail: secrets and personal data
+`scripts/check_sensitive_content.py` scans for AWS key patterns, private key
+headers, weak placeholder secrets, and hardcoded account IDs in ARNs. CI runs
+it on every push/PR (`sensitive-content-check` job) and blocks the build if it
+finds a match in the added lines - this is enforced regardless of local setup.
+
+To also catch this before you commit, install the local hook once per clone:
+```bash
+git config core.hooksPath scripts/hooks
+```
+If you have personal values specific to your own fork/account you want
+checked locally too (a real name, your AWS account ID, a personal file path),
+copy `.guardrails/local-denylist.txt.example` to
+`.guardrails/local-denylist.txt` (git-ignored - it stays local, on purpose)
+and add one string per line.
+
 ## Getting started
 1. Read `ARCHITECTURE.md` - it maps every component to its CloudFormation stack
    and includes a "where to change what" guide.

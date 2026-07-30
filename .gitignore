@@ -18,3 +18,8 @@ clearing.env
 
 # Deployment record with live account-specific IDs (keep local, not public)
 DEPLOYMENT.md
+
+# Personal denylist for scripts/check_sensitive_content.py - real names,
+# account IDs, personal paths. Never commit this file itself (that would
+# defeat the point) - see .guardrails/local-denylist.txt.example.
+.guardrails/local-denylist.txt
