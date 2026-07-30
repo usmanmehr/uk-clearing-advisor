@@ -24,6 +24,12 @@ Parameters:
     Description: >
       Instance ID of the Grafana EC2 host (output of the grafana stack -
       not currently exported, so passed explicitly here).
+  ObservabilityStackName:
+    Type: String
+    Default: uk-clearing-advisor-observability
+    Description: >
+      Stack name to import AlertsTopicArn from, so a failed/missed patch run
+      notifies the same SNS topic every other alarm in this project uses.
   PatchHourUTC:
     Type: String
     Default: '7'
@@ -91,6 +97,20 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonSSMMaintenanceWindowRole
+      Policies:
+        # AmazonSSMMaintenanceWindowRole does NOT include sns:Publish
+        # (checked directly via `aws iam get-policy-version` before adding
+        # this - the managed policy alone would let NotificationConfig on
+        # the task be accepted at deploy time but silently fail to deliver
+        # any notification at runtime).
+        - PolicyName: patch-failure-notifications
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                Resource:
+                  Fn::ImportValue: !Sub '${ObservabilityStackName}-AlertsTopicArn'
 
   MaintenanceWindow:
     Type: AWS::SSM::MaintenanceWindow
@@ -136,6 +156,34 @@ Resources:
           CloudWatchOutputConfig:
             CloudWatchLogGroupName: !Ref PatchLogGroup
             CloudWatchOutputEnabled: true
+          # The underlying SendCommand API requires ServiceRoleArn here
+          # (separate from the task-level ServiceRoleArn above) whenever
+          # NotificationConfig is set - confirmed by an actual deploy
+          # failure ("ServiceRoleArn of RunCommandInvocationParameter is
+          # required if NotificationConfig is specified") before adding
+          # this, not assumed from documentation alone.
+          ServiceRoleArn: !GetAtt MaintenanceWindowServiceRole.Arn
+          # Notifies the same SNS topic every other alarm in this project
+          # uses whenever a run fails, times out, or is cancelled - added
+          # after finding (via `aws ssm describe-maintenance-window-executions`)
+          # that this had failed silently 4 days running (26-29 Jul), because
+          # the instance was stopped at the scheduled 07:00 UTC patch time for
+          # unrelated admin work the night before. SSM cannot patch a stopped
+          # instance, and there was previously no alerting on that at all -
+          # every other operational surface in this project has one, this
+          # didn't. Deliberately did NOT add a CloudWatch alarm on an
+          # AWS/SSM maintenance-window metric - checked with
+          # `aws cloudwatch list-metrics --namespace AWS/SSM` first and
+          # confirmed this account publishes none; Maintenance Windows don't
+          # emit CloudWatch metrics, they notify via SNS (this) or EventBridge
+          # ("Maintenance Window Execution State-change Notification" events,
+          # source aws.ssm) - checked before writing an alarm against a
+          # metric that doesn't exist.
+          NotificationConfig:
+            NotificationArn:
+              Fn::ImportValue: !Sub '${ObservabilityStackName}-AlertsTopicArn'
+            NotificationEvents: [Failed, TimedOut, Cancelled]
+            NotificationType: Command
 
 Outputs:
   MaintenanceWindowId:
