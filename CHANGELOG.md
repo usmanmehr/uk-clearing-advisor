@@ -935,3 +935,51 @@ five new functions.
   group on port 80, the shared `X-Origin-Verify` secret) remain the
   interim mitigation - added to the prioritised recommendations list
   (#10) with the target timing, so it doesn't only exist in chat history.
+
+## 2026-07-30 (6)
+
+### Fixed - Grafana patching was failing silently, added SNS notification on failure
+- User asked to confirm the Grafana instance is genuinely patched daily.
+  Checked live (`aws ssm describe-maintenance-window-executions`) rather
+  than assuming the stack existing meant it was working: the daily patch
+  run had actually **failed 4 days running** (26-29 Jul 2026), with zero
+  alerting - every other operational surface in this project has an alarm,
+  this one didn't. Root cause: `"The instance IDs list contains an invalid
+  entry"` - the Grafana EC2 instance was stopped at the scheduled 07:00 UTC
+  patch time on each of those days (for unrelated admin work the night
+  before, confirmed via CloudTrail `StopInstances`/`StartInstances`
+  events), and SSM cannot patch a stopped instance. It succeeded on 30 Jul
+  only because the instance happened to be running at 07:00 that day.
+- First attempted fix was wrong and caught before deploying: tried to add
+  CloudWatch alarms on `AWS/SSM` `MaintenanceWindowExecutionsFailed`/
+  `Succeeded` metrics. Checked `aws cloudwatch list-metrics --namespace
+  AWS/SSM` first and found this account publishes none - SSM Maintenance
+  Windows don't emit CloudWatch metrics at all; they notify via SNS
+  (`NotificationConfig` on the task) or EventBridge. Removed the invented
+  alarms before they were ever deployed.
+- Correct fix: added `NotificationConfig` (`Failed`, `TimedOut`,
+  `Cancelled` events) to `PatchTask` in `stacks/patching.yaml`, pointed at
+  the same `AlertsTopic` SNS topic every other alarm in this project
+  already uses (imported via `ObservabilityStackName`, new parameter).
+  Two things only found by actually attempting the deploy, not from
+  documentation alone: (1) the SendCommand API requires its own
+  `ServiceRoleArn` inside `MaintenanceWindowRunCommandParameters` whenever
+  `NotificationConfig` is set, separate from the task-level
+  `ServiceRoleArn` - the first deploy attempt failed with exactly this
+  error, fixed by adding it; (2) `AmazonSSMMaintenanceWindowRole` (the
+  managed policy already attached to the service role) does not include
+  `sns:Publish` - checked the actual policy document via `aws iam
+  get-policy-version` before assuming it would work, and added a scoped
+  inline policy granting `sns:Publish` on just the alerts topic ARN.
+- Deployed live and verified end-to-end: `NotificationConfig` and the new
+  `ServiceRoleArn` are present on the live task
+  (`aws ssm get-maintenance-window-task`), and the inline IAM policy
+  granting `sns:Publish` is attached to the service role
+  (`aws iam get-role-policy`) - not just "the deploy succeeded", the
+  actual resulting configuration was read back and confirmed.
+- Root behavioural cause (the instance being stopped at patch time) is not
+  itself fixed by this change - this makes a future recurrence loud
+  instead of silent, it doesn't prevent the instance being stopped again.
+  If patching needs to be guaranteed rather than just alerted-on, that's a
+  separate decision about whether the instance should ever be stopped
+  outside a deliberate maintenance action.
