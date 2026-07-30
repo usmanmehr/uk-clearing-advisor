@@ -8,6 +8,10 @@ First-time deploy: use `./deploy.sh` (see [DEPLOY.md](DEPLOY.md)). This
 document is a developer reference for the stack inventory and for changing
 individual pieces once deployed, not a deployment guide.
 
+For a structured review of this architecture against the AWS Well-Architected
+Framework's six pillars (with file-cited findings graded Good/Risk/Gap and a
+prioritised fix list), see [WELL-ARCHITECTED.md](WELL-ARCHITECTED.md).
+
 ## Diagram (Mermaid)
 
 ```mermaid
