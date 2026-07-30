@@ -1037,12 +1037,20 @@ five new functions.
   mechanism rather than relying on remembering not to repeat it.
 - `scripts/check_sensitive_content.py` (zero dependencies, stdlib only):
   scans added lines for AWS access key ID patterns, private key headers,
-  the weak `change-me` placeholder pattern, and hardcoded 12-digit AWS
+  a weak-static-placeholder-secret pattern, and hardcoded 12-digit AWS
   account IDs inside ARNs. Supports checking staged changes (pre-commit),
   a commit range (CI), or the whole tree (`--all`, manual audit) -
   verified all three modes directly, including a real AWS-key-shaped
   string in a throwaway test repo to confirm it actually blocks, not just
   that it runs without error.
+- Found and fixed a real self-referential false positive by watching CI
+  actually run against this change's own PR: the checker's own source
+  necessarily contains the literal pattern text it's built to detect (the
+  weak-placeholder-secret pattern above), which the checker then correctly
+  flagged in itself. Excluded the checker's own file from scanning
+  (`EXCLUDED_PATHS` in the script) rather than weakening the pattern -
+  the pattern needs to keep working on every other file, this is a
+  one-file, well-understood exception, not a general escape hatch.
 - Split personal values into a separate, git-ignored local denylist
   (`.guardrails/local-denylist.txt`, `.example` version committed with no
   real values) rather than hardcoding any real name/account ID into the

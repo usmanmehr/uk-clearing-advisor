@@ -9,9 +9,11 @@ no-npm/no-extra-deps convention (see lambda/shared/*.test.mjs, deploy.sh).
 
 Two layers of checks:
 1. Built-in structural patterns (safe to commit - they're regexes, not
-   literal secrets): AWS access key IDs, private key headers, the
-   'change-me' placeholder default, etc. These catch real, sensitive
-   values wherever they appear.
+   literal secrets): AWS access key IDs, private key headers, a weak
+   static placeholder secret pattern, etc. These catch real, sensitive
+   values wherever they appear. This file itself is excluded from
+   scanning (see EXCLUDED_PATHS) since it necessarily contains the
+   literal pattern text it's built to detect.
 2. An optional LOCAL, git-ignored denylist (.guardrails/local-denylist.txt)
    for exact strings specific to one person/account - a real name, a real
    AWS account ID, a personal script path. This file is never committed
@@ -36,6 +38,15 @@ from typing import List, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOCAL_DENYLIST_PATH = REPO_ROOT / ".guardrails" / "local-denylist.txt"
+
+# This checker's own source necessarily contains the pattern literals it's
+# built to detect - a pattern has to be defined somewhere. That's the tool
+# definition, not a leak. Excluded from scanning to avoid a permanent
+# self-inflicted false positive. Found by actually running this in CI
+# against its own introducing PR, not assumed in advance.
+EXCLUDED_PATHS = {
+    "scripts/check_sensitive_content.py",
+}
 
 # Structural patterns - safe to keep in this committed script since none of
 # these values are literal secrets, they're shapes that real secrets take.
@@ -86,6 +97,8 @@ def get_all_tracked_content() -> str:
     ).stdout.splitlines()
     chunks = []
     for f in files:
+        if f in EXCLUDED_PATHS:
+            continue
         path = REPO_ROOT / f
         if path.is_file():
             try:
@@ -98,11 +111,20 @@ def get_all_tracked_content() -> str:
 def only_added_lines(diff_text: str) -> str:
     """Diff text includes removed lines too (prefixed '-') - only newly
     added content ('+') is what's about to land in the repo, so that's what
-    we scan. Avoids flagging a commit that only *removes* a bad string."""
-    return "\n".join(
-        line for line in diff_text.splitlines()
-        if line.startswith("+") and not line.startswith("+++")
-    )
+    we scan. Avoids flagging a commit that only *removes* a bad string.
+    Also drops any hunk belonging to an excluded path (see EXCLUDED_PATHS)."""
+    kept_lines = []
+    skip_current_file = False
+    for line in diff_text.splitlines():
+        if line.startswith("+++ "):
+            file_path = line[4:].lstrip("b/").strip()
+            skip_current_file = file_path in EXCLUDED_PATHS
+            continue
+        if skip_current_file:
+            continue
+        if line.startswith("+") and not line.startswith("+++"):
+            kept_lines.append(line)
+    return "\n".join(kept_lines)
 
 
 def scan(text: str, patterns: List[Tuple[str, str]]) -> List[str]:

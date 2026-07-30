@@ -23,3 +23,8 @@ DEPLOYMENT.md
 # account IDs, personal paths. Never commit this file itself (that would
 # defeat the point) - see .guardrails/local-denylist.txt.example.
 .guardrails/local-denylist.txt
+
+# Local IDE/CLI session state and config - not part of the project, was
+# accidentally staged once via `git add -A` which is exactly why it's
+# listed here explicitly now rather than relying on it staying untracked.
+.kiro/
