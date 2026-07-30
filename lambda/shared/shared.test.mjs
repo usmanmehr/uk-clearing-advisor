@@ -173,3 +173,114 @@ test('totalQualificationSlots: a single BTEC Extended Diploma or Diploma alone m
   assert.ok(totalQualificationSlots([{ grade: 'DDD', type: 'btecExtendedDiploma' }]) >= 2);
   assert.ok(totalQualificationSlots([{ grade: 'DD', type: 'btecDiploma' }]) >= 2);
 });
+
+// ============================================================================
+// EXHAUSTIVE / MATHEMATICAL VERIFICATION
+// ============================================================================
+// The tests above spot-check specific values. These prove correctness for
+// EVERY entry in every table, programmatically, rather than trusting a
+// human to have transcribed each number correctly from the source tables.
+// This is the concrete mechanism behind the "verify grade-conversion logic
+// as close to 100% as achievable" goal - arithmetic can be proven exhaustive
+// in a way that "is this university actually in Clearing today" cannot be
+// (that depends on external, real-world facts this codebase does not have
+// live access to - see courseLevelConfirmed/estimatedData throughout
+// SearchCourses, and the DECISION comments in DailyScraper).
+
+// Per-component UCAS Tariff point values that every BTEC combined grade is
+// built from. D* > D > M > P, each worth a fixed amount regardless of
+// which BTEC size it appears in - this single-component-value model is
+// exactly why an Extended Diploma (3 components), Diploma (2), and
+// Extended Certificate (1) are describable as "the same building block,
+// different quantities" rather than three unrelated tables that happen to
+// look similar.
+const COMPONENT_VALUES = { 'D*': 56, D: 48, M: 32, P: 16 };
+
+test('EXHAUSTIVE: every BTEC Extended Diploma combined grade equals the sum of its 3 components', () => {
+  for (const [combinedGrade, publishedPoints] of Object.entries(BTEC_EXTENDED_DIPLOMA_VALUES)) {
+    const components = splitBtecGrade(combinedGrade, 3);
+    const computed = components.reduce((sum, c) => sum + COMPONENT_VALUES[c], 0);
+    assert.equal(
+      computed, publishedPoints,
+      `${combinedGrade} should equal ${components.join('+')} = ${computed}, but table says ${publishedPoints}`,
+    );
+  }
+});
+
+test('EXHAUSTIVE: every BTEC Diploma combined grade equals the sum of its 2 components', () => {
+  for (const [combinedGrade, publishedPoints] of Object.entries(BTEC_DIPLOMA_VALUES)) {
+    const components = splitBtecGrade(combinedGrade, 2);
+    const computed = components.reduce((sum, c) => sum + COMPONENT_VALUES[c], 0);
+    assert.equal(
+      computed, publishedPoints,
+      `${combinedGrade} should equal ${components.join('+')} = ${computed}, but table says ${publishedPoints}`,
+    );
+  }
+});
+
+test('EXHAUSTIVE: every BTEC Extended Certificate value matches its single-component value directly', () => {
+  for (const [grade, publishedPoints] of Object.entries(BTEC_EXTENDED_CERTIFICATE_VALUES)) {
+    assert.equal(
+      COMPONENT_VALUES[grade], publishedPoints,
+      `${grade} should equal the component value ${COMPONENT_VALUES[grade]}, but table says ${publishedPoints}`,
+    );
+  }
+});
+
+// Splits a combined BTEC grade string like "D*DD" into its N individual
+// component grades ["D*", "D", "D"]. Components are always in descending
+// order (D* > D > M > P) and each is either "D*" (two characters) or a
+// single letter, so this greedily consumes "D*" as one token whenever it
+// appears rather than splitting character-by-character.
+function splitBtecGrade(combined, expectedCount) {
+  const components = [];
+  let i = 0;
+  while (i < combined.length) {
+    if (combined.slice(i, i + 2) === 'D*') {
+      components.push('D*');
+      i += 2;
+    } else {
+      components.push(combined[i]);
+      i += 1;
+    }
+  }
+  assert.equal(components.length, expectedCount, `${combined} should split into ${expectedCount} components, got ${components.length}: ${components}`);
+  return components;
+}
+
+test('EXHAUSTIVE: gradeTotal() is exact (not approximate) for every BTEC Extended Diploma grade, alone', () => {
+  // A qualification worth exactly 3 A-level-equivalent slots, submitted
+  // alone, should produce a gradeTotal() equal to its own published UCAS
+  // points with zero rounding drift - there is no "best of >3" trimming or
+  // cross-qualification averaging happening when there's only one entry
+  // occupying all 3 slots.
+  for (const [grade, points] of Object.entries(BTEC_EXTENDED_DIPLOMA_VALUES)) {
+    assert.equal(
+      gradeTotal([{ grade, type: 'btecExtendedDiploma' }]), points,
+      `BTEC Extended Diploma ${grade} (${points} pts) should score exactly ${points} via gradeTotal()`,
+    );
+  }
+});
+
+test('EXHAUSTIVE: every A-level grade value matches Pearson\'s published table (no transcription errors)', () => {
+  const officialAlevelPoints = { 'A*': 56, A: 48, B: 40, C: 32, D: 24, E: 16 };
+  assert.deepEqual(GRADE_VALUES, officialAlevelPoints);
+});
+
+test('EXHAUSTIVE: BTEC point tables contain no duplicate, negative, or non-numeric values', () => {
+  // A sanity check against transcription slips (e.g. two grades
+  // accidentally mapped to the same points, or a typo producing a
+  // negative/NaN value) that a simple spot-check test would not catch.
+  for (const table of [BTEC_EXTENDED_DIPLOMA_VALUES, BTEC_DIPLOMA_VALUES, BTEC_EXTENDED_CERTIFICATE_VALUES]) {
+    const values = Object.values(table);
+    for (const v of values) {
+      assert.ok(Number.isInteger(v) && v > 0, `Tariff point value ${v} must be a positive integer`);
+    }
+    // Values should be strictly descending as grades go from best to worst
+    // (tables are declared in that order in grading.mjs) - a swapped pair
+    // would silently make a lower grade worth more points than a higher one.
+    for (let i = 1; i < values.length; i++) {
+      assert.ok(values[i] < values[i - 1], `Tariff points must strictly decrease grade-by-grade; ${values[i]} is not less than ${values[i - 1]}`);
+    }
+  }
+});

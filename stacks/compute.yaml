@@ -358,7 +358,7 @@ Resources:
       TracingConfig: { Mode: Active }
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/SearchCourses-v17.zip
+        S3Key: lambda/SearchCourses-v18.zip
       Environment:
         Variables:
           CONTACTS_TABLE: !Ref ContactsTable
@@ -377,7 +377,7 @@ Resources:
   # fixes, no-caching, search-insight logging) between IaC deploys. The S3Key
   # above and this Version resource are kept in sync with the live alias so
   # the next `cloudformation deploy` reconciles rather than reverts state.
-  SearchCoursesVersionV5:
+  SearchCoursesVersionV6:
     Type: AWS::Lambda::Version
     Properties:
       FunctionName: !Ref SearchCoursesFunction
@@ -386,7 +386,7 @@ Resources:
     Properties:
       Name: live
       FunctionName: !Ref SearchCoursesFunction
-      FunctionVersion: !GetAtt SearchCoursesVersionV5.Version
+      FunctionVersion: !GetAtt SearchCoursesVersionV6.Version
 
   GetSubjectsFunction:
     Type: AWS::Lambda::Function
