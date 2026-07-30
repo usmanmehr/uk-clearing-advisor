@@ -33,10 +33,13 @@ Parameters:
   OriginSecret:
     Type: String
     NoEcho: true
-    Default: change-me
+    MinLength: 20
     Description: >
       Shared secret CloudFront sends as the X-Origin-Verify header. Must match
-      the OriginSecret used in the grafana-front stack.
+      the OriginSecret used in the grafana-front stack. No default on purpose
+      - a deploy that forgets to pass this must fail loudly rather than
+      silently falling back to a guessable placeholder (deploy.sh always
+      generates/passes a real one).
   LatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
