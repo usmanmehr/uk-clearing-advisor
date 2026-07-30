@@ -837,3 +837,24 @@ five new functions.
   and correctly uses placeholder values throughout (`<your-account-id>`,
   `vpc-xxxxxxxx`, etc.), not real ones, so it wasn't part of the drift
   problem this addresses.
+
+## 2026-07-30 (4)
+
+### Fixed - inaccurate "no data collected" claims removed from the frontend
+- `frontend/index.html` claimed in five places that no personal data is
+  collected / stored / tracked ("All fields stay on your device. Nothing is
+  stored against you.", "No sign-up. No personal data collected.", "No
+  personal data is collected.", "Plain data, no tracking.", plus the same
+  wording duplicated into the `og:description`/`twitter:description` meta
+  tags). This isn't true: `SearchCourses` (`lambda/SearchCourses/index.mjs`)
+  logs a masked source IP, CloudFront-derived geolocation
+  (country/region/city/lat/lon), device type, and user agent on every
+  search, and `GenerateExport` logs a masked IP on every export. All of it
+  goes to CloudWatch Logs and feeds the Grafana geomap/device dashboards.
+- Removed all five claims rather than rewording them into an accurate
+  privacy statement, per explicit instruction - a proper accounting of what
+  is/isn't logged (masked IP, geo, device, UA, retention periods) belongs in
+  a real privacy note if one gets written later, not squeezed into hero
+  copy. The surrounding sentences were kept ("No sign-up" stays true) so the
+  copy still reads naturally.
+- No functional/logging change - this is a copy-accuracy fix only.
