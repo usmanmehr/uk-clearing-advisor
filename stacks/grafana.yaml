@@ -184,8 +184,7 @@ Resources:
           # cronie added explicitly: AL2023 does not include cron by default
           # (AWS deprecated it in favour of systemd timers) - confirmed via
           # AWS's own AL2023 user guide before assuming crontab/cron.d would
-          # just work. Installed anyway, matching the existing dev-box patch
-          # pattern this was modelled on.
+          # just work. Installed anyway, since a cron.d entry is used below.
           dnf install -y grafana nginx openssl cronie
 
           PW=$(aws secretsmanager get-secret-value --secret-id ${GrafanaAdminSecret} --query SecretString --output text --region ${AWS::Region})
@@ -291,17 +290,15 @@ Resources:
           # one only installs Security/Bugfix-classified patches via a patch
           # baseline and can silently miss a day if the instance happens to
           # be stopped at its scheduled time (found and alerted-on
-          # separately). This does a full `dnf update` (broader scope, same
-          # pattern as the admin's own dev-box patch script) and specifically
-          # runs at boot, so a stop/start cycle - the exact scenario that
-          # caused the SSM path to miss 4 days - patches the instance the
-          # moment it comes back up, regardless of what time that happens to
-          # be. --exclude=grafana on purpose: grafana is installed from the
-          # external rpm.grafana.com repo added above specifically to pin a
-          # known-good version; a blanket update pulling in a new major
-          # Grafana version unattended (possibly right before Results Day)
-          # is a real risk this box can't afford that a generic dev box
-          # doesn't need to worry about.
+          # separately). This does a full `dnf update` (broader scope) and
+          # specifically runs at boot, so a stop/start cycle - the exact
+          # scenario that caused the SSM path to miss 4 days - patches the
+          # instance the moment it comes back up, regardless of what time
+          # that happens to be. --exclude=grafana on purpose: grafana is
+          # installed from the external rpm.grafana.com repo added above
+          # specifically to pin a known-good version; a blanket update
+          # pulling in a new major Grafana version unattended (possibly
+          # right before Results Day) is a real risk worth avoiding.
           mkdir -p /opt/clearing-advisor/scripts /var/log
           cat >/opt/clearing-advisor/scripts/patch-check.sh <<'EOF'
           #!/bin/bash

@@ -987,24 +987,21 @@ five new functions.
 ## 2026-07-30 (7)
 
 ### Added - boot-time + daily patch check for the Grafana instance
-- User's own dev-box has a simple daily cron patch script
-  (`/opt/usman-daily-machine/scripts/daily-update-check.sh`) and asked for
-  the same pattern here, running at boot as well, to directly address the
-  root cause behind the earlier silent SSM patch failures (instance
-  stopped at the scheduled patch time - a boot-time check patches it the
-  moment it comes back up, regardless of what time that is).
+- Added a simple `dnf check-update` / `dnf -y update` cron pattern here,
+  running at boot as well, to directly address the root cause behind the
+  earlier silent SSM patch failures (instance stopped at the scheduled
+  patch time - a boot-time check patches it the moment it comes back up,
+  regardless of what time that is).
 - Added to `stacks/grafana.yaml` UserData: `/opt/clearing-advisor/scripts/
-  patch-check.sh` (same `dnf check-update` / `dnf -y update` logic as the
-  user's script, adapted from `yum` to `dnf` for AL2023, logging to
+  patch-check.sh` (`dnf check-update` / `dnf -y update`, logging to
   `/var/log/grafana-patch.log`), a systemd oneshot service
   (`clearing-advisor-patch.service`) that runs it on every boot, and a
-  cron.d entry running it daily at 07:00 UTC too, as asked.
+  cron.d entry running it daily at 07:00 UTC too.
 - `--exclude=grafana` on both the boot and cron update commands, on
   purpose: Grafana is installed from the external `rpm.grafana.com` repo
   added earlier in UserData specifically to pin a known-good version - an
   unattended blanket update pulling in a new major Grafana version
-  (possibly right before Results Day) is a real risk this box can't
-  afford that a generic dev box doesn't need to worry about.
+  (possibly right before Results Day) is a real risk worth avoiding.
 - Found and fixed two real problems by actually deploying, not just from
   reading documentation: (1) AL2023 does not include `cron` by default
   (AWS deprecated it in favour of systemd timers) - confirmed via AWS's
