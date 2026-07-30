@@ -4,6 +4,59 @@ All notable changes to UK Clearing Advisor are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## 2026-07-30
+
+### Added - BTEC qualification support alongside A-levels
+- Students applying with BTEC National qualifications (alone, or mixed with
+  A-levels) can now search on equal footing with A-level-only applicants,
+  rather than being unable to submit a real, common Clearing profile at all.
+- `lambda/shared/grading.mjs`: added `BTEC_EXTENDED_DIPLOMA_VALUES`,
+  `BTEC_DIPLOMA_VALUES`, and `BTEC_EXTENDED_CERTIFICATE_VALUES` (combined-
+  grade UCAS Tariff points), verified directly against Pearson's own
+  official table (qualifications.pearson.com/btec-int-com, Level 3 BTEC
+  Nationals RQF, 2017 admissions cycle onwards - still the current table
+  for 2026 entry) and independently cross-checked against
+  ukcalculator.com - both agree exactly on every value used.
+- Added a `QUALIFICATION_TYPES` registry (`alevel`, `btecExtendedDiploma`,
+  `btecDiploma`, `btecExtendedCertificate`) recording each qualification's
+  real UCAS sizing in A-level-equivalent "slots" (an Extended Diploma is
+  sized as 3 A-levels, a Diploma as 2, an Extended Certificate as 1 - per
+  Pearson's own sizing).
+- Rewrote `gradeTotal()` to a slot-based model: every qualification entry
+  contributes its Tariff points divided evenly across its own slots, pooled
+  together, then the best 3 slots are averaged and scaled to a 3-subject
+  total (same normalisation the 2-A-level fix already used - see the
+  2026-07-2x entries). This is mathematically exact for every real BTEC
+  combined grade (each is a uniform sum of the same per-component values),
+  not an approximation, and reproduces the original A-level-only behaviour
+  unchanged when every entry is an A-level. Verified against UCAS's own
+  published worked example ("1 A-Level A + BTEC Diploma DD = 144 points")
+  and 11 other cases in `lambda/shared/shared.test.mjs`.
+- Added `totalQualificationSlots()` and changed `SearchCourses`'s
+  validation from "at least 2 array entries" to "at least 2 A-level-
+  equivalent slots" - a single BTEC Diploma or Extended Diploma alone (2 or
+  3 slots) is a completely normal applicant profile and was previously
+  rejected outright by the old entry-count rule.
+- `SearchCourses`: `subjectWarning` wording no longer says "A-level X" - a
+  BTEC in a relevant subject can also satisfy a course's usual subject
+  requirement at many universities. Added a `type` field to each submitted
+  qualification entry (optional, defaults to `alevel` for full backward
+  compatibility with existing requests/shared links) and a `BtecSearchCount`
+  metric to track real-world adoption.
+- Frontend: each qualification row now has a "Qualification" dropdown
+  (A-level / BTEC Extended Diploma / BTEC Diploma / BTEC Extended
+  Certificate) that swaps the grade dropdown to that qualification's real
+  grade scale (e.g. A*-E for A-level vs D*D*D*-PPP for a BTEC Extended
+  Diploma). The submit button and shareable-URL encoding both use the same
+  slot-counting logic as the backend. Old shared links (2-part
+  `subject:grade`, no type) still prefill correctly as A-levels.
+- No `node`/npm runtime was available to run `node --test` directly in this
+  session; the algorithm was verified with an equivalent standalone script
+  reproducing the exact same logic (all cases matched expected UCAS points
+  exactly, including the cross-check against UCAS's own published worked
+  example) before being written as permanent tests. Real test execution
+  happens via the existing CI workflow (GitHub Actions, Node 22).
+
 ## 2026-07-29 (2)
 
 ### Added - optional custom domain for the Grafana front door

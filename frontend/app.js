@@ -3,10 +3,30 @@
 'use strict';
 
 const API = '/api';
-const GRADES = ['A*', 'A', 'B', 'C', 'D', 'E'];
 const MAX_ALEVELS = 4;
 const SEARCH_TIMEOUT_MS = 12000;
 
+// Qualification types and their grade options. Values verified against
+// Pearson's official BTEC/A-level UCAS Tariff table (qualifications.pearson.com)
+// and cross-checked against ukcalculator.com - see lambda/shared/grading.mjs
+// for the full verification note (this list only needs the grade labels,
+// not the point values themselves - those are looked up server-side).
+// Order matters: this is also the order shown in the "Qualification" dropdown.
+const QUALIFICATION_TYPES = {
+  alevel: { label: 'A-level', grades: ['A*', 'A', 'B', 'C', 'D', 'E'] },
+  btecExtendedDiploma: {
+    label: 'BTEC Extended Diploma (= 3 A-levels)',
+    grades: ['D*D*D*', 'D*D*D', 'D*DD', 'DDD', 'DDM', 'DMM', 'MMM', 'MMP', 'MPP', 'PPP'],
+  },
+  btecDiploma: {
+    label: 'BTEC Diploma (= 2 A-levels)',
+    grades: ['D*D*', 'D*D', 'DD', 'DM', 'MM', 'MP', 'PP'],
+  },
+  btecExtendedCertificate: {
+    label: 'BTEC Extended Certificate (= 1 A-level)',
+    grades: ['D*', 'D', 'M', 'P'],
+  },
+};
 let lastResults = [];
 let shown = 0;
 let subjectNames = []; // full subject list, loaded once, used for "did you mean"
@@ -49,8 +69,18 @@ function levenshtein(a, b) {
   return dp[m][n];
 }
 
-// ---- A-level rows ----
-function addAlevelRow(subject = '', grade = 'A') {
+// ---- Qualification rows (A-level or BTEC) ----
+function gradeOptionsHtml(type, selectedGrade) {
+  const grades = (QUALIFICATION_TYPES[type] || QUALIFICATION_TYPES.alevel).grades;
+  // Keep the same grade selected across a type switch where the option
+  // still exists (e.g. switching alevel<->btecExtendedCertificate both
+  // have single-letter grades in a similar band); otherwise default to
+  // the first (highest) option rather than leaving nothing selected.
+  const grade = grades.includes(selectedGrade) ? selectedGrade : grades[0];
+  return grades.map((g) => `<option ${g === grade ? 'selected' : ''}>${g}</option>`).join('');
+}
+
+function addAlevelRow(subject = '', grade = 'A', type = 'alevel') {
   const rows = el('alevels');
   if (rows.children.length >= MAX_ALEVELS) return;
   const row = document.createElement('div');
@@ -58,17 +88,34 @@ function addAlevelRow(subject = '', grade = 'A') {
   const idx = rows.children.length;
   row.innerHTML =
     `<div class="field" style="margin:0">
+       <label for="qual-${idx}">Qualification</label>
+       <select id="qual-${idx}" class="al-type">
+         ${Object.entries(QUALIFICATION_TYPES).map(([key, t]) =>
+           `<option value="${key}" ${key === type ? 'selected' : ''}>${t.label}</option>`).join('')}
+       </select>
+     </div>
+     <div class="field" style="margin:0">
        <label for="subj-${idx}">Subject</label>
        <input type="text" id="subj-${idx}" class="al-subject" list="subject-list" value="${subject}" autocomplete="off">
      </div>
      <div class="field" style="margin:0">
        <label for="grade-${idx}">Grade</label>
        <select id="grade-${idx}" class="al-grade">
-         ${GRADES.map((g) => `<option ${g === grade ? 'selected' : ''}>${g}</option>`).join('')}
+         ${gradeOptionsHtml(type, grade)}
        </select>
      </div>
-     <button type="button" class="remove" aria-label="Remove this A-level">Remove</button>`;
+     <button type="button" class="remove" aria-label="Remove this qualification">Remove</button>`;
   row.querySelector('.remove').addEventListener('click', () => { row.remove(); validateForm(); });
+  // Changing the qualification type swaps the grade dropdown's options to
+  // match that qualification's real grade scale (e.g. A*-E for A-level vs
+  // D*D*D*-PPP for a BTEC Extended Diploma) - the two scales use different
+  // strings so the grade select can't just stay as-is across a type change.
+  row.querySelector('.al-type').addEventListener('change', (e) => {
+    const gradeSelect = row.querySelector('.al-grade');
+    const currentGrade = gradeSelect.value;
+    gradeSelect.innerHTML = gradeOptionsHtml(e.target.value, currentGrade);
+    validateForm();
+  });
   row.querySelectorAll('input,select').forEach((i) => i.addEventListener('input', validateForm));
   rows.appendChild(row);
   validateForm();
@@ -82,11 +129,22 @@ function collectAlevels() {
   return Array.from(document.querySelectorAll('.alevel-row')).map((r) => ({
     subject: r.querySelector('.al-subject').value.trim(),
     grade: r.querySelector('.al-grade').value,
+    type: r.querySelector('.al-type').value,
   })).filter((s) => s.subject);
 }
 
+// A-level-equivalent "slots" a qualification counts as - mirrors
+// totalQualificationSlots() in lambda/shared/grading.mjs so the submit
+// button's enabled state matches what the backend will actually accept
+// (e.g. a single BTEC Diploma is 2 slots and is enough on its own, even
+// though it's only 1 row).
+const QUALIFICATION_SLOTS = { alevel: 1, btecExtendedDiploma: 3, btecDiploma: 2, btecExtendedCertificate: 1 };
+function totalSlots(entries) {
+  return entries.reduce((sum, s) => sum + (QUALIFICATION_SLOTS[s.type] || 1), 0);
+}
+
 function validateForm() {
-  el('submit-btn').disabled = collectAlevels().length < 2;
+  el('submit-btn').disabled = totalSlots(collectAlevels()) < 2;
 }
 
 // ---- Subject autocomplete (debounced) + "did you mean" ----
@@ -248,7 +306,14 @@ function renderZeroResultsGuidance(payload) {
 // the moment the page opens.
 function updateShareUrl(payload) {
   const params = new URLSearchParams();
-  for (const s of payload.subjects) params.append('a', `${s.subject}:${s.grade}`);
+  // Third segment (qualification type) is omitted for plain A-levels to
+  // keep old-style links unchanged/shorter for the common case; only
+  // appended for BTEC entries. prefillFromUrl() below treats a missing
+  // third segment as 'alevel', so links generated before this feature
+  // existed keep working exactly as before.
+  for (const s of payload.subjects) {
+    params.append('a', s.type && s.type !== 'alevel' ? `${s.subject}:${s.grade}:${s.type}` : `${s.subject}:${s.grade}`);
+  }
   if (payload.courseInterest) params.set('ci', payload.courseInterest);
   if (payload.priority && payload.priority !== 'balanced') params.set('priority', payload.priority);
   if (payload.location && payload.location !== 'any') params.set('location', payload.location);
@@ -263,8 +328,14 @@ function prefillFromUrl() {
   if (!subjectPairs.length) return false;
   clearAlevelRows();
   for (const pair of subjectPairs.slice(0, MAX_ALEVELS)) {
-    const [subject, grade] = pair.split(':');
-    if (subject) addAlevelRow(decodeURIComponent(subject), GRADES.includes(grade) ? grade : 'A');
+    // Backward compatible: links created before BTEC support only have
+    // "subject:grade" (2 parts) and always meant an A-level - a missing
+    // third segment defaults to 'alevel' so those old links still prefill
+    // correctly rather than silently dropping the row.
+    const [subject, grade, type] = pair.split(':');
+    const qualType = QUALIFICATION_TYPES[type] ? type : 'alevel';
+    const grades = QUALIFICATION_TYPES[qualType].grades;
+    if (subject) addAlevelRow(decodeURIComponent(subject), grades.includes(grade) ? grade : grades[0], qualType);
   }
   if (params.get('ci')) el('course-interest').value = params.get('ci');
   if (params.get('priority')) el('priority').value = params.get('priority');
@@ -277,7 +348,7 @@ function prefillFromUrl() {
 async function onSubmit(e) {
   e.preventDefault();
   const subjects = collectAlevels();
-  if (subjects.length < 2) return;
+  if (totalSlots(subjects) < 2) return;
   showSkeletons();
 
   const payload = {

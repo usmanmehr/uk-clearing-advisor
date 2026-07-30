@@ -162,6 +162,7 @@ of this stack's custom one.
 | Search logic / ranking / badges / filters | lambda/SearchCourses/index.mjs | `build_lambdas.py`, upload as a NEW key `lambda/SearchCourses-vN.zip`, bump `S3Key` + rename `SearchCoursesVersionVN` in compute.yaml (alias must repoint), deploy compute |
 | Add/edit a university | scripts/seed.py (UNIVERSITIES) | re-run `python3 scripts/seed.py` |
 | Add/edit a subject or its UCAS codes | lambda/shared/shared.mjs (SUBJECTS / REQUIRED_SUBJECTS) | rebuild + redeploy SearchCourses (+ GetSubjects) |
+| Add/edit A-level or BTEC Tariff points, or add a new qualification type | lambda/shared/grading.mjs (GRADE_VALUES / BTEC_*_VALUES / QUALIFICATION_TYPES) | verify new values against Pearson's official table first (see grading.mjs comments), add matching frontend/app.js QUALIFICATION_TYPES grade list, rebuild + redeploy SearchCourses |
 | Specialist-subject school lists | lambda/SearchCourses/index.mjs (RESTRICTED_SUBJECTS) | rebuild + redeploy SearchCourses |
 | National subject averages | scripts/seed.py (SUBJECT_DEFAULTS) | re-run seed |
 | Frontend UI | frontend/* | `aws s3 sync frontend/ s3://uk-clearing-advisor-site-REPLACE_ACCOUNT_ID/ --delete` + CloudFront invalidation `/*` |
