@@ -103,6 +103,11 @@ input[type=text], select {
 input[type=text]:focus, select:focus {
   outline: none; border-color: var(--navy-2); box-shadow: 0 0 0 3px rgba(31,61,120,.15);
 }
+input[aria-invalid="true"] { border-color: var(--red); }
+input[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px rgba(176,32,32,.15); }
+.subject-error { color: var(--red); font-size: .82rem; margin: .35rem 0 0; }
+.subject-error .link-btn { font-size: .82rem; color: var(--red); }
+.subject-error .link-btn:hover { color: #7a1616; }
 .help { color: var(--muted); font-size: .82rem; margin: .35rem 0 0; }
 fieldset { border: 1px solid var(--line); border-radius: 10px; margin: 0 0 1.1rem; padding: 1rem; }
 legend { font-weight: 700; color: var(--navy); padding: 0 .4rem; }
