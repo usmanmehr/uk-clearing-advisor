@@ -49,6 +49,8 @@ a { color: var(--navy-2); }
 .brand-name { font-weight: 700; letter-spacing: .2px; }
 .pill { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25);
   padding: .3rem .75rem; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+.header-nav { display: flex; align-items: center; gap: .6rem; }
+.header-nav .pill { color: #fff; }
 
 /* Hero */
 .hero {
@@ -202,6 +204,8 @@ button, a, input, select, label { touch-action: manipulation; }
 }
 
 .note-line { font-size: .8rem; color: var(--muted); font-style: italic; margin: .4rem 0; }
+.offer-line { font-size: .88rem; color: var(--ink); margin: .5rem 0; }
+.faq-inline-link { font-size: .8rem; margin-left: .5rem; }
 .freshness-line { font-size: .78rem; color: var(--muted); margin: .3rem 0 0; }
 .freshness-line.stale { color: var(--amber); font-weight: 600; }
 .sources { font-size: .76rem; color: var(--muted); margin: .1rem 0 .3rem; }

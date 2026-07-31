@@ -60,15 +60,43 @@ async function fetchStatus(url) {
   }
 }
 
+// Classify the fetch outcome into a small, student-relevant set of states.
+// This is deliberately about "can a link to this page be trusted", not
+// about clearing status itself (that heuristic - OPEN_HINTS/CLOSED_HINTS -
+// stays advisory-only per the comment above and is never conflated with
+// this). Written on EVERY run (see processOne below), unlike
+// possibleStatusChange, which only fires on a CHANGE between two runs - a
+// page that has been dead since the day it was seeded would otherwise never
+// get flagged, because there's nothing to "change" from.
+//   'ok'          - a normal successful fetch (2xx/3xx-followed).
+//   'unreachable' - the page itself is gone (404/410) or erroring (5xx), or
+//                    the request failed outright (DNS, timeout, network).
+//                    A real visitor's browser would see the same failure.
+//   'blocked'     - 403/429. Likely the university's site blocking this
+//                    scraper's bot signature specifically (some UK
+//                    university sites do this), NOT necessarily broken for
+//                    a real student's browser. Shown to students with
+//                    different, less alarming wording than 'unreachable'
+//                    for exactly that reason - see SearchCourses.
+function classifyFetch(httpStatus) {
+  if (httpStatus == null) return 'unreachable'; // fetch threw (network/timeout/DNS)
+  if (httpStatus === 403 || httpStatus === 429) return 'blocked';
+  if (httpStatus >= 400) return 'unreachable'; // 404, 410, 5xx, other 4xx
+  return 'ok';
+}
+
 async function processOne(u, results) {
   const url = u.clearingPage;
   if (!url) return;
   let current;
+  let fetchFailed = false;
+  results.checked = (results.checked || 0) + 1;
   try {
     current = await fetchStatus(url);
   } catch (e) {
     results.errors++;
-    return;
+    fetchFailed = true;
+    current = { httpStatus: null, mentionsClearing: false, size: 0 };
   }
 
   // Load previous scrape state from the cache table.
@@ -83,7 +111,13 @@ async function processOne(u, results) {
 
   const now = new Date();
   const nowIso = now.toISOString();
-  const changed = prev && (
+  const clearingPageStatus = classifyFetch(current.httpStatus);
+  if (clearingPageStatus === 'unreachable') results.unreachable = (results.unreachable || 0) + 1;
+  if (clearingPageStatus === 'blocked') results.blocked = (results.blocked || 0) + 1;
+  // Only compare mentionsClearing drift when both runs actually got a real
+  // fetch - a transient network failure shouldn't register as a clearing
+  // status "change" just because mentionsClearing defaulted to false.
+  const changed = prev && !fetchFailed && (
     prev.httpStatus !== current.httpStatus ||
     prev.mentionsClearing !== current.mentionsClearing);
 
@@ -113,6 +147,7 @@ async function processOne(u, results) {
     Item: {
       cacheKey: stateKey, provider: 'state',
       httpStatus: current.httpStatus, mentionsClearing: current.mentionsClearing,
+      clearingPageStatus,
       size: current.size, checkedAt: nowIso,
       expiresAt: Math.floor(now.getTime() / 1000) + 30 * 24 * 3600,
     },
@@ -125,21 +160,30 @@ async function processOne(u, results) {
   // fields that SearchCourses/GetUniversities can expose so students see
   // "last checked" freshness and a "this may have changed" flag rather
   // than an unqualified status that could quietly be stale.
-  // lastAutomatedCheck always updates (every run). possibleStatusChange is
-  // only ever SET to true here (when this run detects a real change since
-  // the previous run) and is deliberately never cleared back to false by
-  // the scraper itself - it stays flagged until a human re-seeds the data
-  // (seed.py writes a fresh lastVerified and clears this field), so a
-  // detected drift can't silently disappear again before anyone reviews it.
+  // lastAutomatedCheck and clearingPageStatus always update (every run) -
+  // unlike possibleStatusChange, which is only ever SET to true here (when
+  // this run detects a real change since the previous run) and is
+  // deliberately never cleared back to false by the scraper itself - it
+  // stays flagged until a human re-seeds the data (seed.py writes a fresh
+  // lastVerified and clears this field), so a detected drift can't silently
+  // disappear again before anyone reviews it. clearingPageStatus is
+  // different on purpose: it always reflects TODAY's fetch, because a dead
+  // link that's been dead since day one (no "change" to detect) still
+  // needs to be flagged to students on every single search, not just once.
   try {
-    const expr = changed
-      ? 'SET possibleStatusChange = :true, lastAutomatedCheck = :checked, lastDetectedChangeAt = :checked'
-      : 'SET lastAutomatedCheck = :checked';
+    const names = { '#status': 'clearingPageStatus' };
+    const values = { ':status': clearingPageStatus, ':checked': nowIso };
+    let expr = 'SET #status = :status, lastAutomatedCheck = :checked';
+    if (changed) {
+      expr += ', possibleStatusChange = :true, lastDetectedChangeAt = :checked';
+      values[':true'] = true;
+    }
     await ddb.send(new UpdateCommand({
       TableName: CONTACTS_TABLE,
       Key: { providerCode: u.providerCode },
       UpdateExpression: expr,
-      ExpressionAttributeValues: changed ? { ':true': true, ':checked': nowIso } : { ':checked': nowIso },
+      ExpressionAttributeNames: names,
+      ExpressionAttributeValues: values,
     }));
   } catch (e) {
     console.error(JSON.stringify({ level: 'ERROR', msg: 'drift flag write failed', providerCode: u.providerCode, error: e.message }));
@@ -162,6 +206,8 @@ export const handler = async () => {
     metric('ScraperRunCount', 1),
     metric('ScraperChangesDetected', results.changes),
     metric('ScraperErrorCount', results.errors),
+    metric('ClearingPageUnreachableCount', results.unreachable || 0),
+    metric('ClearingPageBlockedCount', results.blocked || 0),
   ]);
   console.log(JSON.stringify({ level: 'INFO', msg: 'scrape complete', ...results }));
   return results;
