@@ -64,9 +64,8 @@ const VALID_QUALIFICATION_SUBJECTS_LOWER = VALID_QUALIFICATION_SUBJECTS.map((s) 
 const el = (id) => document.getElementById(id);
 const fmtGBP = (n) => '£' + Number(n).toLocaleString('en-GB');
 
-// Short relative-time string ("3 min ago", "yesterday") - used for both the
-// hero freshness stat and the per-course "checked X ago" line, so a student
-// deciding whether to trust a status badge can see how current it is
+// Short relative-time string ("3 min ago", "yesterday") - used by the hero
+// freshness stat so a visitor can see how current the automated checks are
 // without doing date-maths on an ISO timestamp themselves.
 function timeAgo(isoString) {
   if (!isoString) return null;
@@ -423,13 +422,10 @@ function renderSalaryBanner(salaryContext) {
 // One prominent, page-level notice (not per-course) covering the two things
 // that matter before a student trusts anything below it: how current the
 // underlying clearing-page checks are, and that every status badge reflects
-// the UNIVERSITY overall, not the specific course - the per-course
-// statusNote/freshnessLine already say this on each card, but real feedback
-// was that a single notice at the very top of the results, seen before
-// scrolling into individual cards, is needed as well. Uses a single global
-// timestamp (the most recent automated check across the results shown),
-// not a per-course one - deliberately simpler than the per-card freshness
-// lines, which stay as they are.
+// the UNIVERSITY overall, not the specific course. Per-card statusNote still
+// carries the "not this specific course" caveat too; the per-card "checked
+// X ago" timestamp was removed as redundant now that this single, global
+// timestamp covers it at the page level.
 function renderResultsDisclaimer(results) {
   const box = el('results-disclaimer');
   if (!results || !results.length) { box.hidden = true; return; }
