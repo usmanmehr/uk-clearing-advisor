@@ -385,7 +385,6 @@ function courseCard(c) {
     ${sourceLine}
     ${warn}
     ${driftWarn}
-    ${c.statusNote ? `<div class="note-line">${c.statusNote}</div>` : ''}
     <div class="contact">Clearing: ${phone} ${page ? '&middot; ' + page : ''}
       ${c.hotlineOpens ? `<br>Hotline: ${c.hotlineOpens}` : ''}</div>
     ${pageWarn}
@@ -422,10 +421,10 @@ function renderSalaryBanner(salaryContext) {
 // One prominent, page-level notice (not per-course) covering the two things
 // that matter before a student trusts anything below it: how current the
 // underlying clearing-page checks are, and that every status badge reflects
-// the UNIVERSITY overall, not the specific course. Per-card statusNote still
-// carries the "not this specific course" caveat too; the per-card "checked
-// X ago" timestamp was removed as redundant now that this single, global
-// timestamp covers it at the page level.
+// the UNIVERSITY overall, not the specific course. Says this ONCE for the
+// whole page - the per-card statusNote text and the per-card "checked X
+// ago" timestamp were both removed as redundant, since every card was
+// repeating the identical sentence.
 function renderResultsDisclaimer(results) {
   const box = el('results-disclaimer');
   if (!results || !results.length) { box.hidden = true; return; }
