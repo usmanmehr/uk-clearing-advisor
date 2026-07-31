@@ -220,13 +220,9 @@ function courseCard(c) {
   const driftWarn = c.possibleStatusChange
     ? '<div class="warn">Automated check flagged a possible change to this page - status above may be out of date. Confirm directly.</div>'
     : '';
-  // Per-course freshness: shown next to the status badge, since that's the
-  // moment a student decides whether to trust it before calling. Only
-  // rendered when we have a real timestamp - never fabricated.
-  const checkedAgo = timeAgo(c.lastAutomatedCheck);
-  const freshnessLine = checkedAgo
-    ? `<div class="freshness-line${c.possibleStatusChange ? ' stale' : ''}">Clearing page checked ${checkedAgo}</div>`
-    : '';
+  // Per-course "Clearing page checked X ago" line was removed - it added
+  // no value at the individual-card level (see renderResultsDisclaimer
+  // below for the single, page-level timestamp that replaces it).
 
   // Only show figures that are verified. Graduate prospects are per-university
   // (CUG 2027) where published and DO vary by university, so they stay on
@@ -262,7 +258,6 @@ function courseCard(c) {
     ${sourceLine}
     ${warn}
     ${driftWarn}
-    ${freshnessLine}
     ${c.statusNote ? `<div class="note-line">${c.statusNote}</div>` : ''}
     <div class="contact">Clearing: ${phone} ${page ? '&middot; ' + page : ''}
       ${c.hotlineOpens ? `<br>Hotline: ${c.hotlineOpens}` : ''}</div>
