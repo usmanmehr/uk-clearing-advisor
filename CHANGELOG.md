@@ -4,6 +4,25 @@ All notable changes to UK Clearing Advisor are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## 2026-07-31
+
+### Added - CloudWatch visibility into API Gateway status codes
+- New metric filter on the API access log group, emitting `ApiRequestCount`
+  dimensioned by `StatusCode` for EVERY response code the API returns. One
+  filter dimensioned by status, rather than one filter per code, so new
+  status codes need no further template changes.
+- Added a stacked "API requests by status code" widget to the
+  `ClearingAdvisor-Operations` dashboard using a CloudWatch `SEARCH`
+  expression, so it picks up new codes automatically.
+- Note: CloudWatch Logs rejects a `MetricTransformation` that sets both
+  `Dimensions` and `DefaultValue` together - hit this on first deploy
+  (`CREATE_FAILED`, clean rollback, no impact to other alarms), fixed by
+  dropping the unneeded `DefaultValue`.
+- `ARCHITECTURE.md` stack inventory updated (7 -> 10 alarms, "metric
+  filters" -> "4 log metric filters") to match the live stack.
+- Re-subscribed the admin email to `ClearingAdvisorAlerts` (the prior SNS
+  subscription had been silently deleted).
+
 ## 2026-07-30 (2)
 
 ### Added - exhaustive verification of grade-conversion accuracy

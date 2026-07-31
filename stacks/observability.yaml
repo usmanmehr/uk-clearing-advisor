@@ -15,6 +15,13 @@ Parameters:
   SearchLogGroup:
     Type: String
     Default: /aws/lambda/ClearingAdvisor-SearchCourses
+  ApiAccessLogGroup:
+    Type: String
+    Default: /aws/apigateway/clearing-advisor-access
+    Description: >
+      API Gateway access log group (stacks/api.yaml AccessLogGroup) - JSON
+      format with a "status" field, used for API-level alarms and metrics
+      regardless of which Lambda handled the request.
   Namespace:
     Type: String
     Default: ClearingAdvisor
@@ -59,6 +66,53 @@ Resources:
           MetricValue: '1'
           DefaultValue: 0
 
+  # Counts every 403 the API Gateway access log records, regardless of
+  # cause (origin-secret rejection, WAF, etc). Read from the API access log
+  # (all routes) rather than a single Lambda's log group, so this alarm
+  # still catches a 403 spike even if the affected route isn't
+  # SearchCourses. Kept as its own single-purpose filter/alarm (rather than
+  # folding into ApiStatusCodeFilter below) so this alarm keeps working
+  # independently of the general status-code metric.
+  Api403Filter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref ApiAccessLogGroup
+      FilterName: Api403Count
+      FilterPattern: '{ $.status = 403 }'
+      MetricTransformations:
+        - MetricNamespace: !Ref Namespace
+          MetricName: Api403Count
+          MetricValue: '1'
+          DefaultValue: 0
+
+  # Records EVERY response status code (200, 400, 403, 429, 500, etc), not
+  # just 403 - one metric filter, dimensioned by the actual status value
+  # from each log line, rather than one filter per code (which would need
+  # editing every time a new status is seen). "StatusCode" is a safe
+  # dimension here - it's a small, bounded set of values (HTTP status codes
+  # this API can return), not a high-cardinality field like IP or
+  # requestId, which AWS explicitly warns against dimensioning by (each
+  # distinct value becomes a separate billed custom metric, and CloudWatch
+  # disables a filter that produces >1000 distinct dimension values).
+  ApiStatusCodeFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref ApiAccessLogGroup
+      FilterName: ApiStatusCodeCount
+      FilterPattern: '{ $.status = "*" }'
+      # Note: no DefaultValue here - CloudWatch Logs rejects a
+      # MetricTransformation that sets both Dimensions and DefaultValue
+      # ("dimensions and default value are mutually exclusive properties").
+      # Not needed anyway: this filter matches every log line, so there's
+      # no "pattern didn't match" case for a default to cover.
+      MetricTransformations:
+        - MetricNamespace: !Ref Namespace
+          MetricName: ApiRequestCount
+          MetricValue: '1'
+          Dimensions:
+            - Key: StatusCode
+              Value: $.status
+
   # ---- Alarms ----
   LambdaErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -72,6 +126,28 @@ Resources:
       Period: 300
       EvaluationPeriods: 1
       Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertsTopic]
+      OKActions: [!Ref AlertsTopic]
+
+  Api403Alarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ClearingAdvisor-Api403Errors
+      AlarmDescription: >-
+        CRITICAL: real requests are being rejected with 403. Every 403 on
+        this API means a real visitor's request failed - there is no
+        legitimate reason for a genuine browser session (via CloudFront)
+        to hit this. Alarms on ANY 403 in a 5-minute window, not just a
+        surge, since even one confirmed case is a real visitor unable to
+        search.
+      Namespace: !Ref Namespace
+      MetricName: Api403Count
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlertsTopic]
@@ -271,7 +347,8 @@ Resources:
               "properties": { "title": "Security", "region": "${AWS::Region}", "stat": "Sum", "period": 3600,
                 "metrics": [["${Namespace}", "RateLimitedCount"],
                             ["${Namespace}", "HoneypotTriggered"],
-                            ["${Namespace}", "ZeroResultsCount"]] } },
+                            ["${Namespace}", "ZeroResultsCount"],
+                            ["${Namespace}", "Api403Count"]] } },
             { "type": "metric", "x": 16, "y": 6, "width": 8, "height": 6,
               "properties": { "title": "Lambda health", "region": "${AWS::Region}", "stat": "Sum", "period": 300,
                 "metrics": [["AWS/Lambda", "Errors", "FunctionName", "${SearchFunctionName}"],
@@ -288,7 +365,11 @@ Resources:
               "properties": { "title": "Scraper: runs vs errors", "region": "${AWS::Region}",
                 "stat": "Sum", "period": 3600, "view": "timeSeries",
                 "metrics": [["${Namespace}", "ScraperRunCount"],
-                            ["${Namespace}", "ScraperErrorCount"]] } }
+                            ["${Namespace}", "ScraperErrorCount"]] } },
+            { "type": "metric", "x": 0, "y": 24, "width": 24, "height": 6,
+              "properties": { "title": "API requests by status code", "region": "${AWS::Region}",
+                "stat": "Sum", "period": 300, "view": "timeSeries", "stacked": true,
+                "metrics": [[ { "expression": "SEARCH('{${Namespace},StatusCode} MetricName=\"ApiRequestCount\"', 'Sum', 300)", "id": "e1" } ]] } }
           ]
         }
 
@@ -335,6 +416,7 @@ Resources:
             { "type": "alarm", "x": 0, "y": 12, "width": 24, "height": 4,
               "properties": { "title": "Active alarms",
                 "alarms": [
+                  "${Api403Alarm.Arn}",
                   "${LambdaErrorsAlarm.Arn}", "${LambdaThrottlesAlarm.Arn}",
                   "${SlowSearchAlarm.Arn}", "${SearchDurationAlarm.Arn}",
                   "${RateLimitSurgeAlarm.Arn}",

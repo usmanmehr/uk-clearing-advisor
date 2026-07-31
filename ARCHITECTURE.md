@@ -72,7 +72,7 @@ flowchart LR
       direction TB
       EB["EventBridge rules<br/>DailyScraper (07:00)<br/>WarmUp + Scale up/down (13 Aug)"]
       SCHED["ScheduleManager<br/>DailyScraper / WarmUp"]
-      CW["CloudWatch<br/>metrics, Logs Insights,<br/>7 alarms, 2 dashboards"]
+      CW["CloudWatch<br/>metrics, Logs Insights,<br/>10 alarms, 2 dashboards"]
       SNS["SNS ClearingAdvisorAlerts"]
       SM["Secrets Manager<br/>Grafana admin pw"]
     end
@@ -144,7 +144,7 @@ The rendered diagram is `architecture.png` / `architecture.svg` (source:
 | uk-clearing-advisor-api | eu-west-2 | stacks/api.yaml | HTTP API REPLACE_API_ID, routes, throttle, access logs |
 | uk-clearing-advisor-waf | us-east-1 | stacks/waf.yaml | App WAF clearing-advisor-webacl |
 | uk-clearing-advisor-cdn | eu-west-2 | stacks/cdn.yaml | Site+exports buckets, CloudFront REPLACE_APP_DIST_ID, OAC, origin policies, CF function |
-| uk-clearing-advisor-observability | eu-west-2 | stacks/observability.yaml | SNS, 7 alarms, metric filters, 2 dashboards |
+| uk-clearing-advisor-observability | eu-west-2 | stacks/observability.yaml | SNS, 10 alarms, 4 log metric filters, 2 dashboards |
 | uk-clearing-advisor-scaling | eu-west-2 | stacks/scaling.yaml | ScheduleManager + Results-Day scale up/down |
 | uk-clearing-advisor-grafana | eu-west-2 | stacks/grafana.yaml | EC2, EIP, SG, Cognito, instance role, admin secret |
 | uk-clearing-advisor-grafana-front | us-east-1 | stacks/grafana-front.yaml | Grafana WAF + CloudFront REPLACE_GRAFANA_DIST_ID |
