@@ -6,37 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## 2026-07-31
 
-### Fixed - SearchCourses `live` alias pinned to a stale secret (production incident)
-- The `live` alias was pinned to Lambda version 17, which still held the
-  previous `API_ORIGIN_SECRET` after a secret rotation the day before only
-  updated `$LATEST`. Every real request via CloudFront was rejected with
-  403 ("Could not reach the service") - confirmed as real UK visitor
-  impact, not bot/scanner traffic. Fixed by publishing version 18 and
-  repointing the `live` alias to it. Verified via direct `aws lambda
-  invoke` against `ClearingAdvisor-SearchCourses:live` with the correct
-  `x-origin-verify` header (200, 37 matches).
-- Re-subscribed the admin email to `ClearingAdvisorAlerts` (the prior SNS
-  subscription had been silently deleted).
-
 ### Added - CloudWatch visibility into API Gateway status codes
-- `Api403Filter`/`Api403Alarm`: counts every 403 on the API access log
-  (any route, not just SearchCourses) and alarms on ANY 403 in a 5-minute
-  window - even one confirmed 403 means a real visitor was rejected.
-  Notifies `ClearingAdvisorAlerts` (email).
-- `ApiStatusCodeFilter`: a second, more general metric filter on the same
-  log group, emitting `ApiRequestCount` dimensioned by `StatusCode` for
-  EVERY response code the API returns (200, 403, whatever else shows up).
-  One filter dimensioned by status, rather than one filter per code, so
-  new status codes need no further template changes.
+- New metric filter on the API access log group, emitting `ApiRequestCount`
+  dimensioned by `StatusCode` for EVERY response code the API returns. One
+  filter dimensioned by status, rather than one filter per code, so new
+  status codes need no further template changes.
 - Added a stacked "API requests by status code" widget to the
   `ClearingAdvisor-Operations` dashboard using a CloudWatch `SEARCH`
   expression, so it picks up new codes automatically.
 - Note: CloudWatch Logs rejects a `MetricTransformation` that sets both
   `Dimensions` and `DefaultValue` together - hit this on first deploy
-  (`CREATE_FAILED`, clean rollback, no impact to the existing 403 alarm),
-  fixed by dropping the unneeded `DefaultValue`.
+  (`CREATE_FAILED`, clean rollback, no impact to other alarms), fixed by
+  dropping the unneeded `DefaultValue`.
 - `ARCHITECTURE.md` stack inventory updated (7 -> 10 alarms, "metric
   filters" -> "4 log metric filters") to match the live stack.
+- Re-subscribed the admin email to `ClearingAdvisorAlerts` (the prior SNS
+  subscription had been silently deleted).
 
 ## 2026-07-30 (2)
 

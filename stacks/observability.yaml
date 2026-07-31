@@ -20,8 +20,8 @@ Parameters:
     Default: /aws/apigateway/clearing-advisor-access
     Description: >
       API Gateway access log group (stacks/api.yaml AccessLogGroup) - JSON
-      format with a "status" field, used to alarm on 403s regardless of
-      which Lambda produced them (origin-secret rejection, WAF, etc).
+      format with a "status" field, used for API-level alarms and metrics
+      regardless of which Lambda handled the request.
   Namespace:
     Type: String
     Default: ClearingAdvisor
@@ -67,13 +67,12 @@ Resources:
           DefaultValue: 0
 
   # Counts every 403 the API Gateway access log records, regardless of
-  # cause (origin-secret rejection, a misconfigured/rotated secret like the
-  # SearchCourses live-alias incident on 31 Jul 2026, WAF, etc). Read from
-  # the API access log (all routes) rather than a single Lambda's log group,
-  # so this alarm still catches a 403 spike even if the affected route isn't
+  # cause (origin-secret rejection, WAF, etc). Read from the API access log
+  # (all routes) rather than a single Lambda's log group, so this alarm
+  # still catches a 403 spike even if the affected route isn't
   # SearchCourses. Kept as its own single-purpose filter/alarm (rather than
-  # folding into ApiStatusCodeFilter below) so the existing Api403Alarm
-  # keeps working unchanged.
+  # folding into ApiStatusCodeFilter below) so this alarm keeps working
+  # independently of the general status-code metric.
   Api403Filter:
     Type: AWS::Logs::MetricFilter
     Properties:
@@ -140,12 +139,9 @@ Resources:
         CRITICAL: real requests are being rejected with 403. Every 403 on
         this API means a real visitor's request failed - there is no
         legitimate reason for a genuine browser session (via CloudFront)
-        to hit this. Root causes seen so far: the SearchCourses live alias
-        being pinned to a Lambda version with a stale API_ORIGIN_SECRET
-        after a secret rotation (31 Jul 2026 incident - fixed by publishing
-        a new version and repointing the alias, see CHANGELOG). Alarms on
-        ANY 403 in a 5-minute window, not just a surge, since even one
-        confirmed case is a real visitor unable to search.
+        to hit this. Alarms on ANY 403 in a 5-minute window, not just a
+        surge, since even one confirmed case is a real visitor unable to
+        search.
       Namespace: !Ref Namespace
       MetricName: Api403Count
       Statistic: Sum
