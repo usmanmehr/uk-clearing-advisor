@@ -216,6 +216,11 @@ button, a, input, select, label { touch-action: manipulation; }
 }
 .salary-banner b { color: var(--navy); }
 .salary-banner a { color: var(--navy-2); font-weight: 600; }
+.results-disclaimer {
+  background: var(--amber-bg); border: 1px solid #e7d38f; color: var(--ink);
+  padding: .75rem .9rem; border-radius: 8px; font-size: .9rem; margin: 0 0 .9rem;
+}
+.results-disclaimer b { color: var(--navy); }
 .honeypot { display: none; position: absolute; left: -9999px; }
 
 .did-you-mean { font-size: .85rem; color: var(--muted); margin: .35rem 0 0; }

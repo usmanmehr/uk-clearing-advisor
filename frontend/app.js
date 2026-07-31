@@ -296,8 +296,38 @@ function renderSalaryBanner(salaryContext) {
   banner.hidden = false;
 }
 
+// ---- Global results-page disclaimer ----
+// One prominent, page-level notice (not per-course) covering the two things
+// that matter before a student trusts anything below it: how current the
+// underlying clearing-page checks are, and that every status badge reflects
+// the UNIVERSITY overall, not the specific course - the per-course
+// statusNote/freshnessLine already say this on each card, but real feedback
+// was that a single notice at the very top of the results, seen before
+// scrolling into individual cards, is needed as well. Uses a single global
+// timestamp (the most recent automated check across the results shown),
+// not a per-course one - deliberately simpler than the per-card freshness
+// lines, which stay as they are.
+function renderResultsDisclaimer(results) {
+  const box = el('results-disclaimer');
+  if (!results || !results.length) { box.hidden = true; return; }
+  const timestamps = results
+    .map((c) => c.lastAutomatedCheck)
+    .filter(Boolean)
+    .map((t) => new Date(t).getTime())
+    .filter((t) => !Number.isNaN(t));
+  const checkedLine = timestamps.length
+    ? `Clearing pages last checked: <b>${new Date(Math.max(...timestamps)).toLocaleString('en-GB')}</b>.`
+    : 'Clearing page check times are not yet available for these results.';
+  box.innerHTML =
+    `${checkedLine} The status shown for each university reflects its `
+    + `<b>overall</b> Clearing availability, not this specific course - always `
+    + `confirm directly with the university before relying on it.`;
+  box.hidden = false;
+}
+
 function showSkeletons() {
   el('results-section').hidden = false;
+  el('results-disclaimer').hidden = true;
   el('results-summary').textContent = 'Searching...';
   el('results').innerHTML = Array(3).fill('<div class="skeleton"></div>').join('');
   el('show-more').hidden = true;
@@ -414,6 +444,7 @@ async function onSubmit(e) {
     if (!res.ok) {
       el('results').innerHTML = '';
       el('salary-banner').hidden = true;
+      el('results-disclaimer').hidden = true;
       el('results-summary').innerHTML = `<span class="error">${data.message || 'Something went wrong.'}</span>`;
       return;
     }
@@ -422,6 +453,7 @@ async function onSubmit(e) {
     shown = 0;
     el('results').innerHTML = '';
     renderSalaryBanner(data.salaryContext);
+    renderResultsDisclaimer(lastResults);
     const secs = ((performance.now() - started) / 1000).toFixed(1);
     if (!lastResults.length) {
       renderZeroResultsGuidance(payload);
@@ -434,6 +466,7 @@ async function onSubmit(e) {
   } catch (err) {
     el('results').innerHTML = '';
     el('salary-banner').hidden = true;
+    el('results-disclaimer').hidden = true;
     if (err.name === 'AbortError') {
       el('results-summary').innerHTML = '<span class="error">This is taking longer than usual. Please try again in a moment.</span>';
     } else {
