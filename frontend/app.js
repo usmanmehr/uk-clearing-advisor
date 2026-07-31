@@ -32,6 +32,35 @@ let shown = 0;
 let subjectNames = []; // full subject list, loaded once, used for "did you mean"
 const PAGE = 10;
 
+// Valid A-level / BTEC subjects for the qualifications section - a
+// DIFFERENT list from the course/degree subjects loaded via /subjects for
+// "What do you want to study?" above. These are the actual exam subjects a
+// student can hold a grade in (e.g. "Physics" the A-level, or "Applied
+// Science" as a BTEC sector with no direct degree equivalent), not degree
+// course names - the two vocabularies overlap a lot but aren't identical
+// (e.g. "PPE" or "MORSE" are course names, never A-level/BTEC subjects).
+// Static list rather than a server round-trip: this never changes at
+// runtime, unlike course subjects which are looked up server-side.
+const VALID_QUALIFICATION_SUBJECTS = [
+  // Common A-level subjects
+  'Mathematics', 'Further Mathematics', 'Physics', 'Chemistry', 'Biology',
+  'Computer Science', 'Economics', 'Business', 'Business Studies', 'Accounting',
+  'History', 'Geography', 'English Literature', 'English Language',
+  'Psychology', 'Sociology', 'Politics', 'Law', 'Philosophy', 'Religious Studies',
+  'French', 'Spanish', 'German', 'Latin', 'Classical Civilisation',
+  'Art and Design', 'Design and Technology', 'Music', 'Music Technology', 'Drama and Theatre',
+  'Physical Education', 'Media Studies', 'Film Studies',
+  'Environmental Science', 'Statistics', 'Government and Politics',
+  // Common BTEC subject/sector areas
+  'Applied Science', 'Health and Social Care', 'Information Technology',
+  'Engineering', 'Sport', 'Sport and Exercise Science', 'Performing Arts',
+  'Creative Digital Media Production', 'Travel and Tourism', 'Hospitality',
+  'Enterprise and Entrepreneurship', 'Construction and the Built Environment',
+  'Applied Law', 'Applied Psychology',
+];
+// Lower-cased once for fast exact/substring lookups.
+const VALID_QUALIFICATION_SUBJECTS_LOWER = VALID_QUALIFICATION_SUBJECTS.map((s) => s.toLowerCase());
+
 const el = (id) => document.getElementById(id);
 const fmtGBP = (n) => '£' + Number(n).toLocaleString('en-GB');
 
@@ -69,6 +98,78 @@ function levenshtein(a, b) {
   return dp[m][n];
 }
 
+// ---- Qualification subject validation (A-level/BTEC subject field) ----
+// Separate from the course-interest "did you mean" above: this is a hard
+// allowlist check (must match a real qualification subject), not a soft
+// free-text resolve, since a wrong course-interest just returns broader
+// results, but a made-up qualification subject would be sent to the
+// backend as if it were real.
+//
+// Returns { exact: true, name } for a case-insensitive exact match,
+// { exact: false, name } for the closest fuzzy match (edit distance <=2,
+// e.g. "Chemestry" -> "Chemistry"), or null if nothing is close enough to
+// suggest.
+function findClosestQualificationSubject(text) {
+  const q = (text || '').trim().toLowerCase();
+  if (!q) return null;
+  const exactIdx = VALID_QUALIFICATION_SUBJECTS_LOWER.indexOf(q);
+  if (exactIdx !== -1) return { exact: true, name: VALID_QUALIFICATION_SUBJECTS[exactIdx] };
+  let best = null, bestD = 3; // threshold matches the course-interest "did you mean" logic above
+  for (let i = 0; i < VALID_QUALIFICATION_SUBJECTS_LOWER.length; i++) {
+    const d = levenshtein(q, VALID_QUALIFICATION_SUBJECTS_LOWER[i]);
+    if (d < bestD) { bestD = d; best = VALID_QUALIFICATION_SUBJECTS[i]; }
+  }
+  return best ? { exact: false, name: best } : null;
+}
+
+function isValidQualificationSubject(text) {
+  const q = (text || '').trim().toLowerCase();
+  if (!q) return true; // not filled in yet - not an error, just incomplete
+  return VALID_QUALIFICATION_SUBJECTS_LOWER.includes(q);
+}
+
+// Updates one row's inline error/suggestion. `showSuggestion` gates whether
+// the "did you mean" text is actually shown (vs. just marking the field
+// aria-invalid) - debounced on input so it doesn't flash while someone is
+// mid-way through typing a longer subject name, but always shown on blur.
+function updateSubjectValidation(row, showSuggestion) {
+  const input = row.querySelector('.al-subject');
+  const errorEl = row.querySelector('.subject-error');
+  const value = input.value.trim();
+  if (!value) {
+    errorEl.hidden = true;
+    input.removeAttribute('aria-invalid');
+    return;
+  }
+  const match = findClosestQualificationSubject(value);
+  if (match && match.exact) {
+    errorEl.hidden = true;
+    input.removeAttribute('aria-invalid');
+    return;
+  }
+  input.setAttribute('aria-invalid', 'true');
+  if (!showSuggestion) { errorEl.hidden = true; return; }
+  if (match) {
+    errorEl.innerHTML = `Not a recognised subject. Did you mean <button type="button" class="link-btn subject-suggestion">${match.name}</button>?`;
+    errorEl.querySelector('.subject-suggestion').addEventListener('click', () => {
+      input.value = match.name;
+      updateSubjectValidation(row, true);
+      validateForm();
+    });
+  } else {
+    errorEl.textContent = 'Not a recognised A-level or BTEC subject. Choose one from the list.';
+  }
+  errorEl.hidden = false;
+}
+
+// Every row that has SOME text entered must be an exact allowlist match -
+// an empty row (not yet filled in) is fine and doesn't block submission,
+// matching the existing "at least 2 slots" rule's tolerance for blank rows.
+function allQualificationSubjectsValid() {
+  return Array.from(document.querySelectorAll('.alevel-row')).every(
+    (r) => isValidQualificationSubject(r.querySelector('.al-subject').value));
+}
+
 // ---- Qualification rows (A-level or BTEC) ----
 function gradeOptionsHtml(type, selectedGrade) {
   const grades = (QUALIFICATION_TYPES[type] || QUALIFICATION_TYPES.alevel).grades;
@@ -96,7 +197,8 @@ function addAlevelRow(subject = '', grade = 'A', type = 'alevel') {
      </div>
      <div class="field" style="margin:0">
        <label for="subj-${idx}">Subject</label>
-       <input type="text" id="subj-${idx}" class="al-subject" list="subject-list" value="${subject}" autocomplete="off">
+       <input type="text" id="subj-${idx}" class="al-subject" list="qual-subject-list" value="${subject}" autocomplete="off">
+       <p class="subject-error" hidden></p>
      </div>
      <div class="field" style="margin:0">
        <label for="grade-${idx}">Grade</label>
@@ -116,8 +218,26 @@ function addAlevelRow(subject = '', grade = 'A', type = 'alevel') {
     gradeSelect.innerHTML = gradeOptionsHtml(e.target.value, currentGrade);
     validateForm();
   });
-  row.querySelectorAll('input,select').forEach((i) => i.addEventListener('input', validateForm));
+  const subjectInput = row.querySelector('.al-subject');
+  // Debounced fuzzy check while typing (mirrors the course-interest "did
+  // you mean" debounce above) - shows a suggestion once the user pauses,
+  // rather than flashing an error on every keystroke of a longer subject
+  // name (e.g. "Religious Studies" would otherwise show an error for most
+  // of the time it's being typed).
+  let subjectDebounce;
+  subjectInput.addEventListener('input', () => {
+    updateSubjectValidation(row, false);
+    clearTimeout(subjectDebounce);
+    subjectDebounce = setTimeout(() => updateSubjectValidation(row, true), 400);
+    validateForm();
+  });
+  // Always show the full error/suggestion immediately on blur, regardless
+  // of the debounce timer - catches the case where a user tabs/clicks away
+  // right after finishing typing, before the debounce would have fired.
+  subjectInput.addEventListener('blur', () => updateSubjectValidation(row, true));
+  row.querySelectorAll('select').forEach((i) => i.addEventListener('input', validateForm));
   rows.appendChild(row);
+  if (subject) updateSubjectValidation(row, true); // prefilled row (e.g. from a shared URL) - validate immediately
   validateForm();
 }
 
@@ -126,11 +246,19 @@ function clearAlevelRows() {
 }
 
 function collectAlevels() {
-  return Array.from(document.querySelectorAll('.alevel-row')).map((r) => ({
-    subject: r.querySelector('.al-subject').value.trim(),
-    grade: r.querySelector('.al-grade').value,
-    type: r.querySelector('.al-type').value,
-  })).filter((s) => s.subject);
+  return Array.from(document.querySelectorAll('.alevel-row')).map((r) => {
+    const raw = r.querySelector('.al-subject').value.trim();
+    // Normalise to the canonical allowlist spelling/casing on an exact
+    // (case-insensitive) match - e.g. a user typing "chemistry" submits as
+    // "Chemistry", matching what's shown everywhere else (results,
+    // exports, logs) rather than whatever casing they happened to type.
+    const match = findClosestQualificationSubject(raw);
+    return {
+      subject: match && match.exact ? match.name : raw,
+      grade: r.querySelector('.al-grade').value,
+      type: r.querySelector('.al-type').value,
+    };
+  }).filter((s) => s.subject);
 }
 
 // A-level-equivalent "slots" a qualification counts as - mirrors
@@ -144,7 +272,7 @@ function totalSlots(entries) {
 }
 
 function validateForm() {
-  el('submit-btn').disabled = totalSlots(collectAlevels()) < 2;
+  el('submit-btn').disabled = totalSlots(collectAlevels()) < 2 || !allQualificationSubjectsValid();
 }
 
 // ---- Subject autocomplete (debounced) + "did you mean" ----
@@ -377,7 +505,15 @@ function prefillFromUrl() {
 async function onSubmit(e) {
   e.preventDefault();
   const subjects = collectAlevels();
-  if (totalSlots(subjects) < 2) return;
+  // Belt-and-braces alongside the disabled submit button: a subject
+  // typed and left un-corrected (or a row prefilled from a manipulated
+  // share URL) must not reach the backend as if it were a real
+  // qualification subject. Surface every offending row's suggestion/error
+  // rather than submitting silently.
+  if (totalSlots(subjects) < 2 || !allQualificationSubjectsValid()) {
+    document.querySelectorAll('.alevel-row').forEach((row) => updateSubjectValidation(row, true));
+    return;
+  }
   showSkeletons();
 
   const payload = {
@@ -471,8 +607,17 @@ async function updateFreshnessStat() {
   } catch { /* keep the static "Hourly" fallback already in the HTML */ }
 }
 
+// Populates the qualifications section's subject datalist once - static
+// list, no server round-trip needed (unlike loadSubjects() above, which
+// hits /subjects for the different course-interest vocabulary).
+function populateQualificationSubjectList() {
+  el('qual-subject-list').innerHTML =
+    VALID_QUALIFICATION_SUBJECTS.map((s) => `<option value="${s}">`).join('');
+}
+
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', () => {
+  populateQualificationSubjectList();
   const prefilled = prefillFromUrl();
   if (!prefilled) {
     addAlevelRow();
