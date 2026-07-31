@@ -188,10 +188,31 @@ function courseCard(c) {
   const badge = c.statusBadge || { colour: 'Amber', label: 'Check on Results Day' };
   const phone = c.clearingPhone
     ? `<a href="tel:${c.clearingPhone.replace(/[^+\d]/g, '')}">${c.clearingPhone}</a>` : 'See clearing page';
-  const page = c.clearingPage
-    ? `<a href="https://${c.clearingPage.replace(/^https?:\/\//, '')}" target="_blank" rel="noopener">Clearing page</a>` : '';
+  // clearingPageState (set server-side from the daily automated check - see
+  // SearchCourses) changes how the clearing-page link itself is shown:
+  //  - 'unreachable': the page was broken the last time it was checked, so
+  //    linking to it as if it works would send students to a dead page (the
+  //    exact problem reported). Swap the link for a plain warning instead.
+  //  - 'blocked': the university's site blocked the automated check
+  //    specifically (likely anti-bot, not necessarily broken for a real
+  //    browser) - keep the link but add a softer heads-up rather than
+  //    hiding it.
+  //  - anything else ('ok', or no data yet): show the link as normal.
+  let page = '';
+  let pageWarn = '';
+  if (c.clearingPage) {
+    const url = `https://${c.clearingPage.replace(/^https?:\/\//, '')}`;
+    if (c.clearingPageState === 'unreachable') {
+      pageWarn = '<div class="warn">Our last automated check could not load this university\'s clearing page - it may have moved. Use the phone number above instead.</div>';
+    } else if (c.clearingPageState === 'blocked') {
+      page = `<a href="${url}" target="_blank" rel="noopener">Clearing page</a>`;
+      pageWarn = '<div class="note-line">Our automated check could not confirm this link is working, but it may just be blocking automated visits - it may still work fine in your browser.</div>';
+    } else {
+      page = `<a href="${url}" target="_blank" rel="noopener">Clearing page</a>`;
+    }
+  }
   const warn = c.subjectWarning ? `<div class="warn">${c.subjectWarning}</div>` : '';
-  const est = c.estimatedData ? ' <span class="badge Amber">Indicative offer</span>' : '';
+  const est = c.estimatedData ? ' <span class="badge Amber">Rough guide, not confirmed</span>' : '';
   // Set by the daily automated check when this university's clearing page
   // may have changed since it was last confirmed - advisory, not definitive
   // (see statusNote for the full caveat). Shown as its own line so it's not
@@ -216,7 +237,13 @@ function courseCard(c) {
   if (c.graduateProspects != null) {
     stats.push(`<div class="stat"><b>${c.graduateProspects}%</b><span>graduate prospects</span></div>`);
   }
-  stats.push(`<div class="stat"><b>${c.typicalOffer}</b><span>typical offer</span></div>`);
+  // typicalOffer is now a plain-English sentence (e.g. "Likely to need
+  // strong grades (e.g. AAB-level)"), not a compact figure like the stats
+  // above, so it doesn't belong in the same bold-number stat box - it's
+  // rendered as its own line instead, with a link to the FAQ explaining
+  // where this comes from.
+  const offerLine = `<div class="offer-line">${c.typicalOffer}
+    <a href="/faq.html#grades" class="faq-inline-link">How is this worked out?</a></div>`;
 
   const sources = [];
   if (c.graduateProspects != null && c.graduateProspectsSourceUrl) {
@@ -231,6 +258,7 @@ function courseCard(c) {
     <div class="stat-row">
       ${stats.join('\n      ')}
     </div>
+    ${offerLine}
     ${sourceLine}
     ${warn}
     ${driftWarn}
@@ -238,6 +266,7 @@ function courseCard(c) {
     ${c.statusNote ? `<div class="note-line">${c.statusNote}</div>` : ''}
     <div class="contact">Clearing: ${phone} ${page ? '&middot; ' + page : ''}
       ${c.hotlineOpens ? `<br>Hotline: ${c.hotlineOpens}` : ''}</div>
+    ${pageWarn}
   </article>`;
 }
 

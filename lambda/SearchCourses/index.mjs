@@ -70,13 +70,42 @@ function indicativeGrade(u) {
   return 120; // ~BBB
 }
 
+// DECISION (see FAQ page, "How are the grades worked out?"): previously
+// showed a specific-looking letter-grade string (e.g. "ABB (indicative)").
+// Real user feedback was that students read that as the actual grades the
+// university is asking for, despite the "(indicative)" suffix - a small
+// amber badge and a footer disclaimer weren't enough to stop that
+// misreading. This band is NOT derived from anything the specific course or
+// university has published for this subject - it comes only from the
+// university's overall tier (Russell Group / HighFliers rank / IB tier),
+// via indicativeGrade() above. Plain-English wording makes that "this is a
+// rough guide, not a published requirement" distinction unavoidable to read,
+// rather than something only a careful reader would notice.
 function offerBand(numeric) {
-  if (numeric >= 152) return 'A*AA (indicative)';
-  if (numeric >= 144) return 'AAA (indicative)';
-  if (numeric >= 136) return 'AAB (indicative)';
-  if (numeric >= 128) return 'ABB (indicative)';
-  if (numeric >= 120) return 'BBB (indicative)';
-  return 'BBC (indicative)';
+  if (numeric >= 152) return 'Likely to need top grades (e.g. A*AA-level)';
+  if (numeric >= 144) return 'Likely to need high grades (e.g. AAA-level)';
+  if (numeric >= 136) return 'Likely to need strong grades (e.g. AAB-level)';
+  if (numeric >= 128) return 'Likely to need good grades (e.g. ABB-level)';
+  if (numeric >= 120) return 'Likely to need solid grades (e.g. BBB-level)';
+  return 'May accept more flexible grades (e.g. BBC-level)';
+}
+
+// clearingPageStatus (set by DailyScraper on every run, not just on change -
+// see lambda/DailyScraper/index.mjs) drives how the clearing-page link is
+// shown. 'unreachable' means the page itself returned an error the last
+// time it was checked (404/410/5xx or a fetch failure) - a real visitor
+// would hit the same dead page, so the link is swapped for a clear warning
+// and the phone number is put first. 'blocked' means the university's site
+// returned 403/429 to the scraper specifically, which is much more likely
+// to be anti-bot blocking than a page that's actually broken for a real
+// student's browser - shown with softer wording that doesn't discourage
+// clicking. No recorded status yet (new/never-scraped) is treated the same
+// as 'ok' rather than alarming a student over a lack of data.
+function clearingPageState(u) {
+  const status = u.clearingPageStatus;
+  if (status === 'unreachable') return 'unreachable';
+  if (status === 'blocked') return 'blocked';
+  return 'ok';
 }
 
 // Badge reflects the UNIVERSITY's overall Clearing status, not the specific
@@ -301,6 +330,7 @@ export const handler = async (event) => {
         clearingPhone: u.clearingPhone || null,
         clearingEmail: u.clearingEmail || null,
         clearingPage: u.clearingPage || null,
+        clearingPageState: clearingPageState(u),
         accommodationGuarantee: !!u.accommodationGuarantee,
         hotlineOpens: u.hotlineOpens || null,
         estimatedData: true,
