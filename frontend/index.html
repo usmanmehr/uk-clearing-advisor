@@ -86,8 +86,14 @@
 
         <fieldset>
           <legend>Your qualifications</legend>
-          <p class="help">A-levels, BTECs, or a mix of both.</p>
+          <p class="help">A-levels, BTECs, or a mix of both. Start typing a subject to pick from the list.</p>
           <div id="alevels"></div>
+          <!-- Separate from #subject-list (course/degree subjects for "What do
+               you want to study?") - A-level/BTEC subjects are a different
+               vocabulary (e.g. "Physics" the exam subject vs "Physics" the
+               degree, or "Applied Science" as a BTEC area with no degree
+               equivalent), populated once in app.js from VALID_QUALIFICATION_SUBJECTS. -->
+          <datalist id="qual-subject-list"></datalist>
           <button type="button" id="add-alevel" class="secondary small">+ Add another qualification</button>
         </fieldset>
 
@@ -157,6 +163,7 @@
 
     <section aria-labelledby="results-heading" class="card results-card" id="results-section" hidden>
       <h2 id="results-heading">Results</h2>
+      <div id="results-disclaimer" class="results-disclaimer" role="note" hidden></div>
       <p id="salary-banner" class="salary-banner" hidden></p>
       <div id="results-summary" role="status" aria-live="polite"></div>
       <div id="results" class="results"></div>
