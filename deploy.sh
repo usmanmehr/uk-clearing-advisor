@@ -159,8 +159,40 @@ aws cloudformation deploy \
     ApiDomain="$API_DOMAIN" \
     ApiOriginSecret="$API_ORIGIN_SECRET"
 
+log "Building frontend (content-hashing app.js/styles.css)"
+python3 scripts/build_frontend.py
+
+# Cache-Control strategy (fixes browsers/edge silently keeping a stale
+# app.js/styles.css after a deploy - see WELL-ARCHITECTED.md):
+#   - HTML: no-cache -> every visit revalidates with CloudFront/S3 (a 304
+#     if unchanged, a fresh copy if not), so a returning visitor's browser
+#     never runs stale markup or an old asset URL.
+#   - Hashed JS/CSS (app.<hash>.js, styles.<hash>.css): immutable, 1 year -
+#     safe forever, because the filename itself changes when the content
+#     does, so there is never a stale-content-under-the-same-URL risk.
+#   - Everything else (favicon, robots.txt, sitemap.xml, geo-blocked.html):
+#     a short max-age as a reasonable default - not hashed, but also not
+#     something a fix needs to reach visitors within seconds of a deploy.
 log "Syncing frontend to S3"
-aws s3 sync frontend/ "s3://${SITE_BUCKET}/" --delete --region "$REGION" --only-show-errors
+# Three `cp --recursive` passes, each scoped to one file group so it gets
+# the right Cache-Control. Deliberately `cp`, not `sync`, for these three -
+# `sync` only compares size/mtime and would silently SKIP re-uploading a
+# file (and so skip applying a changed --cache-control) if it looks
+# unchanged since a previous pass in this same run, since the local files
+# don't change between passes. `cp --recursive` always writes, so every
+# pass's Cache-Control actually lands.
+aws s3 cp build/frontend/ "s3://${SITE_BUCKET}/" --recursive --region "$REGION" --only-show-errors \
+  --cache-control "no-cache" --exclude "*" --include "*.html"
+aws s3 cp build/frontend/ "s3://${SITE_BUCKET}/" --recursive --region "$REGION" --only-show-errors \
+  --cache-control "public, max-age=31536000, immutable" --exclude "*" --include "app.*.js" --include "styles.*.css"
+aws s3 cp build/frontend/ "s3://${SITE_BUCKET}/" --recursive --region "$REGION" --only-show-errors \
+  --cache-control "public, max-age=3600" --exclude "*.html" --exclude "app.*.js" --exclude "styles.*.css"
+# Pure pruning pass: removes anything left in the bucket that's no longer
+# in build/frontend/ (e.g. last deploy's old-hash app.<oldhash>.js). Safe
+# to run last with no --cache-control override - every current file was
+# just written by `cp` above (S3 LastModified newer than local mtime), so
+# `sync` sees them as already up to date and only handles deletions.
+aws s3 sync build/frontend/ "s3://${SITE_BUCKET}/" --delete --region "$REGION" --only-show-errors
 
 DIST_ID=$(aws cloudformation describe-stacks \
   --stack-name uk-clearing-advisor-cdn --region "$REGION" \
