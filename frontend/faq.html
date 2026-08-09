@@ -94,6 +94,22 @@
         tell you exactly what's available right now.
       </p>
 
+      <h2 class="h3" style="margin-top: 2rem;">I run a university website and I'm seeing a bot from this site - what is it?</h2>
+      <p>
+        That's our automated clearing-page checker, identifying itself as
+        <code>UKClearingAdvisorBot/1.0</code>. It visits your public clearing
+        page a few times a day (more often around Results Day) purely to
+        check the page still loads, so we can warn students if it's moved or
+        gone down - it does not submit forms, follow every link, or scrape
+        anything beyond that one page.
+      </p>
+      <p>
+        If you'd rather it didn't visit, add a rule for that user agent in
+        your <code>robots.txt</code> and we'll treat that the same as any
+        other automated checker would - we don't try to work around a site
+        that's asked us not to visit.
+      </p>
+
       <h2 class="h3" style="margin-top: 2rem;">Is any of this guaranteed?</h2>
       <p>
         No, and we don't want to pretend otherwise. This is a free,

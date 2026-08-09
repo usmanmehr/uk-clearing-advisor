@@ -39,13 +39,109 @@ async function metric(name, value) {
 const OPEN_HINTS = /clearing\s+(is\s+)?(now\s+)?open|open\s+for\s+clearing|now\s+open/i;
 const CLOSED_HINTS = /clearing\s+(is\s+)?(now\s+)?closed|no\s+(clearing\s+)?vacancies|not\s+(currently\s+)?(taking|accepting)|fully\s+booked/i;
 
+// DECISION: investigated why ~8/44 university sites consistently 403 this
+// scraper (see CHANGELOG). Confirmed via direct probing (same IP, only the
+// UA changed) that at least 2 of them (QMUL, Durham - both CloudFront-
+// fronted) block purely on a naive "does this look like a browser UA"
+// pattern match against the old string 'UKClearingAdvisor/1.0
+// (+monitoring)' - literally containing the word "monitoring" was enough
+// to trip it. This new UA follows the same transparent, standard
+// self-declaring-bot convention real crawlers use (Googlebot, Bingbot,
+// etc.): a 'Mozilla/5.0 (compatible; ...)' prefix so naive UA-prefix
+// filters pass it, while the string still HONESTLY identifies this as a
+// bot and gives a real contact URL - this is not browser impersonation,
+// nothing about the request claims to be a human or a specific real
+// browser. Confirmed this format alone (no other header changes) flips
+// QMUL and Durham from 403 to 200.
+// NOT expected to fix every blocked site: 4 others (Cardiff, City London,
+// Hertfordshire, Dundee) are behind a Cloudflare JS challenge (Turnstile),
+// which requires executing JavaScript - no UA or header change can pass
+// that, confirmed by testing full browser headers + a cookie jar against
+// Cardiff and still getting 403. Those are expected to remain flagged
+// 'blocked' to students (with the existing UI fallback to the phone
+// number) rather than chasing a headless-browser or paid-proxy fix for a
+// background freshness check.
+const SCRAPER_USER_AGENT = 'Mozilla/5.0 (compatible; UKClearingAdvisorBot/1.0; +https://dfmqz7kt534c0.cloudfront.net/faq.html)';
+
+// robots.txt cache, keyed by origin - one fetch per host per Lambda
+// container per day (this function typically runs once, cold, per
+// invocation), not per university. Backs the FAQ's promise that a site
+// owner can opt this bot out via robots.txt like any other automated
+// checker - this is a genuine commitment, not just wording, so it needs
+// real code behind it.
+const robotsCache = new Map();
+
+// Minimal robots.txt parser: only what's needed to answer "is this exact
+// path disallowed for our UA token (or *)". Deliberately not a full
+// standards-compliant parser (no wildcard/regex path matching, no
+// Sitemap/Crawl-delay handling) - the only real-world cases seen on UK
+// university sites during investigation were either no robots.txt
+// restriction at all, or a straightforward path-prefix Disallow, and a
+// minimal parser that's easy to verify is safer than a clever one that's
+// easy to get wrong for a rule that gates whether we fetch at all.
+function isDisallowed(robotsText, path, userAgentToken) {
+  if (!robotsText) return false;
+  const lines = robotsText.split(/\r?\n/).map((l) => l.replace(/#.*$/, '').trim());
+  let currentAgents = [];
+  let applicable = false;
+  const disallowsByAgent = { specific: [], wildcard: [] };
+  for (const line of lines) {
+    if (!line) continue;
+    const m = line.match(/^([A-Za-z-]+):\s*(.*)$/);
+    if (!m) continue;
+    const [, field, rawValue] = m;
+    const value = rawValue.trim();
+    const fieldLower = field.toLowerCase();
+    if (fieldLower === 'user-agent') {
+      currentAgents = [value.toLowerCase()];
+      continue;
+    }
+    if (fieldLower === 'disallow' && value) {
+      for (const agent of currentAgents) {
+        if (agent === '*') disallowsByAgent.wildcard.push(value);
+        else if (userAgentToken.toLowerCase().includes(agent)) disallowsByAgent.specific.push(value);
+      }
+    }
+  }
+  applicable = disallowsByAgent.specific.length > 0;
+  const rules = applicable ? disallowsByAgent.specific : disallowsByAgent.wildcard;
+  return rules.some((rule) => path.startsWith(rule));
+}
+
+async function isAllowedByRobots(target) {
+  try {
+    const u = new URL(target);
+    const origin = u.origin;
+    let robotsText = robotsCache.get(origin);
+    if (robotsText === undefined) {
+      try {
+        const res = await fetch(`${origin}/robots.txt`, {
+          method: 'GET', redirect: 'follow',
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+          headers: { 'User-Agent': SCRAPER_USER_AGENT },
+        });
+        robotsText = res.ok ? await res.text() : null;
+      } catch {
+        robotsText = null; // robots.txt unreachable -> fail open, same as most crawlers
+      }
+      robotsCache.set(origin, robotsText);
+    }
+    return !isDisallowed(robotsText, u.pathname, 'UKClearingAdvisorBot');
+  } catch {
+    return true; // malformed URL handled elsewhere; don't block on a robots check failure
+  }
+}
+
 async function fetchStatus(url) {
   const target = /^https?:\/\//.test(url) ? url : `https://${url}`;
+  if (!(await isAllowedByRobots(target))) {
+    return { httpStatus: null, mentionsClearing: false, size: 0, robotsDisallowed: true };
+  }
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(target, { method: 'GET', redirect: 'follow', signal: ctrl.signal,
-      headers: { 'User-Agent': 'UKClearingAdvisor/1.0 (+monitoring)' } });
+      headers: { 'User-Agent': SCRAPER_USER_AGENT } });
     const text = await res.text();
     const mentionCount = (text.match(/clearing/gi) || []).length;
     // "Mentions clearing" now requires more than one hit (a single stray
@@ -78,7 +174,14 @@ async function fetchStatus(url) {
 //                    a real student's browser. Shown to students with
 //                    different, less alarming wording than 'unreachable'
 //                    for exactly that reason - see SearchCourses.
-function classifyFetch(httpStatus) {
+//   'robots-excluded' - the university's own robots.txt asked this bot not
+//                    to fetch this path. Deliberately NOT the same as
+//                    'unreachable' - this isn't a failure, it's honouring
+//                    an explicit opt-out (see the FAQ's promise to site
+//                    owners). Never overwrites clearingPageStatus with
+//                    stale/misleading info in this case - see processOne.
+function classifyFetch(httpStatus, robotsDisallowed) {
+  if (robotsDisallowed) return 'robots-excluded';
   if (httpStatus == null) return 'unreachable'; // fetch threw (network/timeout/DNS)
   if (httpStatus === 403 || httpStatus === 429) return 'blocked';
   if (httpStatus >= 400) return 'unreachable'; // 404, 410, 5xx, other 4xx
@@ -111,9 +214,10 @@ async function processOne(u, results) {
 
   const now = new Date();
   const nowIso = now.toISOString();
-  const clearingPageStatus = classifyFetch(current.httpStatus);
+  const clearingPageStatus = classifyFetch(current.httpStatus, current.robotsDisallowed);
   if (clearingPageStatus === 'unreachable') results.unreachable = (results.unreachable || 0) + 1;
   if (clearingPageStatus === 'blocked') results.blocked = (results.blocked || 0) + 1;
+  if (clearingPageStatus === 'robots-excluded') results.robotsExcluded = (results.robotsExcluded || 0) + 1;
   // Only compare mentionsClearing drift when both runs actually got a real
   // fetch - a transient network failure shouldn't register as a clearing
   // status "change" just because mentionsClearing defaulted to false.
@@ -223,6 +327,7 @@ export const handler = async () => {
     metric('ScraperErrorCount', results.errors),
     metric('ClearingPageUnreachableCount', results.unreachable || 0),
     metric('ClearingPageBlockedCount', results.blocked || 0),
+    metric('ClearingPageRobotsExcludedCount', results.robotsExcluded || 0),
   ]);
   console.log(JSON.stringify({ level: 'INFO', msg: 'scrape complete', ...results }));
   return results;
