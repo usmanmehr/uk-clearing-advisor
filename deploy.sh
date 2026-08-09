@@ -70,9 +70,10 @@ python3 scripts/build_lambdas.py
 for f in build/*.zip; do
   aws s3 cp "$f" "s3://${ART_BUCKET}/lambda/" --region "$REGION" --only-show-errors
 done
-# Also stage the Grafana dashboard model used by the grafana stack's EC2
+# Also stage the Grafana dashboard models used by the grafana stack's EC2
 # UserData (only actually needed for --full, harmless to upload otherwise).
 aws s3 cp grafana/dashboard.json "s3://${ART_BUCKET}/grafana/dashboard.json" --region "$REGION" --only-show-errors
+aws s3 cp grafana/freshness-dashboard.json "s3://${ART_BUCKET}/grafana/freshness-dashboard.json" --region "$REGION" --only-show-errors
 
 # ---------- 2. Data stack + seed ----------
 log "Step 2/8: Data stack (DynamoDB tables)"
