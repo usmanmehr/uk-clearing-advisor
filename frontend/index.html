@@ -76,9 +76,13 @@
       <form id="search-form" novalidate>
         <div class="field">
           <label for="course-interest">What do you want to study?</label>
-          <input type="text" id="course-interest" name="courseInterest"
-                 list="subject-list" autocomplete="off"
-                 placeholder="For example, Economics" aria-describedby="ci-help">
+          <div class="input-clear-wrap">
+            <input type="text" id="course-interest" name="courseInterest"
+                   list="subject-list" autocomplete="off"
+                   placeholder="For example, Economics" aria-describedby="ci-help">
+            <button type="button" id="clear-course-interest" class="clear-input-btn"
+                    aria-label="Clear course interest" hidden>&times;</button>
+          </div>
           <datalist id="subject-list"></datalist>
           <p id="ci-help" class="help">Free text. Leave blank to see the strongest universities across all subjects.</p>
           <p id="did-you-mean" class="did-you-mean" hidden></p>
