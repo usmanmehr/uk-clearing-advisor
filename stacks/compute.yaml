@@ -556,61 +556,51 @@ Resources:
           COST_TAG_KEY: Application
           COST_TAG_VALUE: uk-clearing-advisor
 
-  # Daily scraper at 07:00 UTC (year-round cadence, unchanged).
-  DailyScraperSchedule:
-    Type: AWS::Events::Rule
+  # Daily scraper at 07:00 UTC, year-round EXCEPT 12-13 Aug 2026, which get
+  # their own dedicated, denser schedules below (Aug12Schedule,
+  # Aug13MorningSchedule, Aug13EveningSchedule). Split into two
+  # EventBridge Scheduler resources (not one always-on classic
+  # AWS::Events::Rule cron) specifically so it can carry a real
+  # StartDate/EndDate - a classic cron rule has no native way to skip two
+  # specific dates, which is what caused the previous design's duplicate
+  # 07:00 UTC runs on 12/13 Aug (the daily cron firing on TOP of the
+  # ramp-up/Results-Day schedules, not instead of them).
+  DailyScraperScheduleEarly:
+    Type: AWS::Scheduler::Schedule
     Properties:
-      Name: ClearingAdvisor-DailyScraper
+      Name: ClearingAdvisor-DailyScraperEarly
+      Description: >-
+        Daily 07:00 UTC scrape, up to and including 11 Aug 2026 - the day
+        before the 12/13 Aug dedicated schedules take over.
       ScheduleExpression: 'cron(0 7 * * ? *)'
+      ScheduleExpressionTimezone: UTC
+      EndDate: '2026-08-11T23:59:00.000Z'
+      FlexibleTimeWindow: { Mode: 'OFF' }
       State: ENABLED
-      Targets:
-        - Id: DailyScraper
-          Arn: !GetAtt DailyScraperFunction.Arn
-  DailyScraperInvokePermission:
-    Type: AWS::Lambda::Permission
+      Target:
+        Arn: !GetAtt DailyScraperFunction.Arn
+        RoleArn: !GetAtt RampUpScraperSchedulerRole.Arn
+  DailyScraperScheduleResume:
+    Type: AWS::Scheduler::Schedule
     Properties:
-      FunctionName: !Ref DailyScraperFunction
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceArn: !GetAtt DailyScraperSchedule.Arn
-
-  # Results Day only: same DailyScraperFunction, run every 15 minutes from
-  # 04:00 to 20:00 UTC on 13 Aug 2026 - matching the ScaleUp/ScaleDown window
-  # in stacks/scaling.yaml, since that's when universities are most likely
-  # to open/close vacancies multiple times in a day and a once-daily check
-  # is the least useful. Time-bounded (year=2026) so this rule fires exactly
-  # once and never needs manual disabling afterwards. No code change to
-  # DailyScraper itself - it's idempotent (compares against the last stored
-  # scrape state), so running it more often simply narrows the detection
-  # window; it doesn't change what "changed" means.
-  # NOTE: the 07:00 UTC run from DailyScraperSchedule above falls on this
-  # same 15-minute grid, so on 13 Aug there will be one overlapping run at
-  # 07:00 UTC (harmless - the scraper is idempotent and bounded-concurrency,
-  # just a few seconds of duplicate work that day).
-  ResultsDayScraperSchedule:
-    Type: AWS::Events::Rule
-    Properties:
-      Name: ClearingAdvisor-ResultsDayScraper
-      ScheduleExpression: 'cron(0/15 4-20 13 8 ? 2026)'
+      Name: ClearingAdvisor-DailyScraperResume
+      Description: >-
+        Resumes the ordinary daily 07:00 UTC scrape from 14 Aug 2026
+        onwards, once the 12/13 Aug dedicated schedules have finished.
+      ScheduleExpression: 'cron(0 7 * * ? *)'
+      ScheduleExpressionTimezone: UTC
+      StartDate: '2026-08-14T00:00:00.000Z'
+      FlexibleTimeWindow: { Mode: 'OFF' }
       State: ENABLED
-      Targets:
-        - Id: ResultsDayScraper
-          Arn: !GetAtt DailyScraperFunction.Arn
-  ResultsDayScraperInvokePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref DailyScraperFunction
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceArn: !GetAtt ResultsDayScraperSchedule.Arn
+      Target:
+        Arn: !GetAtt DailyScraperFunction.Arn
+        RoleArn: !GetAtt RampUpScraperSchedulerRole.Arn
 
-  # Pre-Results-Day ramp-up: same DailyScraperFunction, run every hour from
-  # now until 12 Aug 2026 (the day before Results Day), when the 15-minute
-  # ResultsDayScraperSchedule above takes over on 13 Aug. Bounded with a
-  # real EndDate (EventBridge Scheduler, not a cron() rule) so it stops
-  # automatically and never needs manual disabling. No code change to
-  # DailyScraper - it's idempotent, so a higher frequency only narrows the
-  # detection window.
+  # Pre-Results-Day ramp-up: hourly, from creation up to and including
+  # 11 Aug 2026 - trimmed one day earlier than before so it hands off
+  # cleanly to Aug12Schedule below rather than overlapping with it for a
+  # whole day. No code change to DailyScraper - it's idempotent, so a
+  # higher frequency only narrows the detection window.
   # NOTE: hourly x 44 universities over ~3 weeks is a real, sustained load
   # on other institutions' clearing pages (order of tens of thousands of
   # requests total) - flagged as worth reconsidering if any university
@@ -620,12 +610,70 @@ Resources:
     Properties:
       Name: ClearingAdvisor-RampUpScraper
       Description: >-
-        Hourly DailyScraper runs from creation until 12 Aug 2026 23:59 UTC,
-        ramping up detection frequency ahead of Results Day (13 Aug, when
-        ResultsDayScraperSchedule takes over at 15-minute frequency).
+        Hourly DailyScraper runs from creation until 11 Aug 2026 23:59 UTC,
+        ramping up detection frequency ahead of the 12/13 Aug dedicated
+        schedules below.
       ScheduleExpression: 'rate(1 hour)'
       ScheduleExpressionTimezone: UTC
+      EndDate: '2026-08-11T23:59:00.000Z'
+      FlexibleTimeWindow: { Mode: 'OFF' }
+      State: ENABLED
+      Target:
+        Arn: !GetAtt DailyScraperFunction.Arn
+        RoleArn: !GetAtt RampUpScraperSchedulerRole.Arn
+
+  # 12 Aug 2026 (day before Results Day): every 30 minutes, all day.
+  # Bounded to this single day only - Aug13MorningSchedule below takes
+  # over at 00:00 UTC on the 13th.
+  Aug12Schedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: ClearingAdvisor-Aug12Scraper
+      Description: 12 Aug 2026 - every 30 minutes, all day.
+      ScheduleExpression: 'rate(30 minutes)'
+      ScheduleExpressionTimezone: UTC
+      StartDate: '2026-08-12T00:00:00.000Z'
       EndDate: '2026-08-12T23:59:00.000Z'
+      FlexibleTimeWindow: { Mode: 'OFF' }
+      State: ENABLED
+      Target:
+        Arn: !GetAtt DailyScraperFunction.Arn
+        RoleArn: !GetAtt RampUpScraperSchedulerRole.Arn
+
+  # 13 Aug 2026 (Results Day), morning/day: every 10 minutes from 07:00 UTC
+  # (08:00 BST, when real UCAS results are released) to 20:00 UTC
+  # (21:00 BST) - matching the ScaleUp/ScaleDown window in
+  # stacks/scaling.yaml, since that's when universities are most likely to
+  # open/close vacancies multiple times in a day and a slower check is the
+  # least useful.
+  Aug13MorningSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: ClearingAdvisor-Aug13MorningScraper
+      Description: 13 Aug 2026 08:00-21:00 BST - every 10 minutes.
+      ScheduleExpression: 'rate(10 minutes)'
+      ScheduleExpressionTimezone: UTC
+      StartDate: '2026-08-13T07:00:00.000Z'
+      EndDate: '2026-08-13T20:00:00.000Z'
+      FlexibleTimeWindow: { Mode: 'OFF' }
+      State: ENABLED
+      Target:
+        Arn: !GetAtt DailyScraperFunction.Arn
+        RoleArn: !GetAtt RampUpScraperSchedulerRole.Arn
+
+  # 13 Aug 2026, evening: drops to every 30 minutes from 20:00 UTC
+  # (21:00 BST) - the same moment ScheduleManager reverts provisioned
+  # concurrency/throttle back to base (see stacks/scaling.yaml's
+  # ScaleDownCron) - through the end of the day.
+  Aug13EveningSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: ClearingAdvisor-Aug13EveningScraper
+      Description: 13 Aug 2026 21:00 BST onwards - every 30 minutes.
+      ScheduleExpression: 'rate(30 minutes)'
+      ScheduleExpressionTimezone: UTC
+      StartDate: '2026-08-13T20:00:00.000Z'
+      EndDate: '2026-08-13T23:59:00.000Z'
       FlexibleTimeWindow: { Mode: 'OFF' }
       State: ENABLED
       Target:
