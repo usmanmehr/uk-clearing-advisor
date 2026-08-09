@@ -290,6 +290,13 @@ async function loadSubjects(q) {
 // Shown while the user is typing, before they submit - lets a mistyped
 // subject ("Buisness", "Comp Sci") get corrected early rather than silently
 // resolving server-side or matching nothing.
+// Shows/hides the small "x" clear button inside #course-interest based on
+// whether it currently has any text - hidden while empty so it doesn't sit
+// there doing nothing, shown as soon as there's something worth clearing.
+function updateClearButtonVisibility() {
+  el('clear-course-interest').hidden = !el('course-interest').value;
+}
+
 function renderDidYouMean(query) {
   const box = el('did-you-mean');
   if (!query || query.length < 3 || !subjectNames.length) { box.hidden = true; return; }
@@ -307,6 +314,7 @@ function renderDidYouMean(query) {
   el('dym-btn').addEventListener('click', () => {
     el('course-interest').value = best;
     box.hidden = true;
+    updateClearButtonVisibility();
   });
 }
 
@@ -523,6 +531,7 @@ function prefillFromUrl() {
     if (subject) addAlevelRow(decodeURIComponent(subject), grades.includes(grade) ? grade : grades[0], qualType);
   }
   if (params.get('ci')) el('course-interest').value = params.get('ci');
+  updateClearButtonVisibility();
   if (params.get('priority')) el('priority').value = params.get('priority');
   if (params.get('location')) el('location').value = params.get('location');
   if (params.get('rg') === '1') el('russellGroupOnly').checked = true;
@@ -658,6 +667,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateFreshnessStat();
   el('add-alevel').addEventListener('click', () => addAlevelRow());
   el('course-interest').addEventListener('input', (e) => {
+    updateClearButtonVisibility();
     clearTimeout(debounce);
     const q = e.target.value.trim();
     if (q.length >= 2) {
@@ -665,6 +675,19 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       el('did-you-mean').hidden = true;
     }
+  });
+  // Resets the field for a fresh search with a different course: clears
+  // the value, hides any leftover "did you mean" suggestion, restores the
+  // unfiltered subject list (mirrors what loading with an empty query
+  // already does elsewhere), refocuses the input so typing can continue
+  // immediately, and re-hides itself since the field is now empty.
+  el('clear-course-interest').addEventListener('click', () => {
+    const input = el('course-interest');
+    input.value = '';
+    el('did-you-mean').hidden = true;
+    updateClearButtonVisibility();
+    loadSubjects('');
+    input.focus();
   });
   el('search-form').addEventListener('submit', onSubmit);
   el('show-more').addEventListener('click', renderMore);

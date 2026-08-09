@@ -105,6 +105,21 @@ input[type=text]:focus, select:focus {
 }
 input[aria-invalid="true"] { border-color: var(--red); }
 input[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px rgba(176,32,32,.15); }
+
+/* Wraps an input with a small "x" clear button overlaid inside it (e.g.
+   course-interest) - only the wrapper is positioned, the input itself
+   keeps its normal width/styling, so this can wrap any input[type=text]
+   without touching that input's own rules above. */
+.input-clear-wrap { position: relative; }
+.input-clear-wrap input[type=text] { padding-right: 2.4rem; }
+.clear-input-btn {
+  position: absolute; top: 50%; right: 0; transform: translateY(-50%);
+  width: 44px; height: 44px; min-height: 0; padding: 0;
+  background: transparent; color: var(--muted); border: none; border-radius: 50%;
+  font-size: 1.3rem; line-height: 1; display: grid; place-items: center; cursor: pointer;
+}
+.clear-input-btn:hover { background: var(--bg); color: var(--ink); }
+.clear-input-btn:focus-visible { outline: 3px solid var(--gold); outline-offset: 1px; }
 .subject-error { color: var(--red); font-size: .82rem; margin: .35rem 0 0; }
 .subject-error .link-btn { font-size: .82rem; color: var(--red); }
 .subject-error .link-btn:hover { color: #7a1616; }
