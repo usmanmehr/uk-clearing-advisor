@@ -324,6 +324,11 @@ function courseCard(c) {
   //    specifically (likely anti-bot, not necessarily broken for a real
   //    browser) - keep the link but add a softer heads-up rather than
   //    hiding it.
+  //  - 'robots-excluded': the university's own robots.txt asked our
+  //    checker not to visit - we honour that (see the FAQ), so we
+  //    genuinely have no verified freshness data here. Keep the link (a
+  //    real visitor's browser isn't bound by robots.txt) but say plainly
+  //    that we can't confirm it, without implying anything is broken.
   //  - anything else ('ok', or no data yet): show the link as normal.
   let page = '';
   let pageWarn = '';
@@ -334,6 +339,9 @@ function courseCard(c) {
     } else if (c.clearingPageState === 'blocked') {
       page = `<a href="${url}" target="_blank" rel="noopener">Clearing page</a>`;
       pageWarn = '<div class="note-line">Our automated check could not confirm this link is working, but it may just be blocking automated visits - it may still work fine in your browser.</div>';
+    } else if (c.clearingPageState === 'robots-excluded') {
+      page = `<a href="${url}" target="_blank" rel="noopener">Clearing page</a>`;
+      pageWarn = '<div class="note-line">This university has asked automated checkers not to visit this page, so we can\'t confirm it\'s working - it should still work fine in your browser.</div>';
     } else {
       page = `<a href="${url}" target="_blank" rel="noopener">Clearing page</a>`;
     }

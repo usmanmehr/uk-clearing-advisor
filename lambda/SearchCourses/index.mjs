@@ -99,12 +99,18 @@ function offerBand(numeric) {
 // returned 403/429 to the scraper specifically, which is much more likely
 // to be anti-bot blocking than a page that's actually broken for a real
 // student's browser - shown with softer wording that doesn't discourage
-// clicking. No recorded status yet (new/never-scraped) is treated the same
-// as 'ok' rather than alarming a student over a lack of data.
+// clicking. 'robots-excluded' means the university's own robots.txt asked
+// our checker not to visit this path - we honour that (see the FAQ), so we
+// genuinely have no verified freshness data for it; treated like
+// 'unreachable' in the UI (can't confirm the link works) but with wording
+// that doesn't suggest anything is broken. No recorded status yet
+// (new/never-scraped) is treated the same as 'ok' rather than alarming a
+// student over a lack of data.
 function clearingPageState(u) {
   const status = u.clearingPageStatus;
   if (status === 'unreachable') return 'unreachable';
   if (status === 'blocked') return 'blocked';
+  if (status === 'robots-excluded') return 'robots-excluded';
   return 'ok';
 }
 
