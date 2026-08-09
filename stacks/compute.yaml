@@ -212,6 +212,24 @@ Resources:
                 Condition:
                   StringEquals: { 'cloudwatch:namespace': ClearingAdvisor }
 
+  # Dead-letter queue for DailyScraper's async invocations (EventBridge
+  # Scheduler/Rule -> Lambda is always async, so a failed invocation is
+  # normally retried twice then silently dropped with nothing beyond a
+  # CloudWatch Logs error for that one run - see WELL-ARCHITECTED.md's
+  # "no DLQ on async-invoked functions" gap). Wired as the Lambda's
+  # OnFailure Destination below (DailyScraperEventInvokeConfig), not the
+  # function's own DeadLetterConfig - Destinations carry structured JSON
+  # (invocation request/response/error), which is what the new Grafana
+  # freshness dashboard's DLQ panel actually needs to show something
+  # useful, rather than DeadLetterConfig's raw event payload only.
+  # 14-day retention (SQS max) so a failure is never lost before someone
+  # notices it on the dashboard.
+  DailyScraperDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: ClearingAdvisor-DailyScraperDLQ
+      MessageRetentionPeriod: 1209600
+
   DailyScraperRole:
     Type: AWS::IAM::Role
     Properties:
@@ -242,6 +260,13 @@ Resources:
                 Resource: '*'
                 Condition:
                   StringEquals: { 'cloudwatch:namespace': ClearingAdvisor }
+              # Required for Lambda to deliver a failed async invocation's
+              # payload to the OnFailure destination queue below - this is
+              # the Lambda SERVICE's own delivery action, but it acts using
+              # the function's execution role, so the role needs it too.
+              - Effect: Allow
+                Action: ['sqs:SendMessage']
+                Resource: !GetAtt DailyScraperDLQ.Arn
 
   WarmUpRole:
     Type: AWS::IAM::Role
@@ -485,7 +510,7 @@ Resources:
       Role: !GetAtt DailyScraperRole.Arn
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/DailyScraper-v3.zip
+        S3Key: lambda/DailyScraper-v4.zip
       Environment:
         Variables:
           CONTACTS_TABLE: !Ref ContactsTable
@@ -494,6 +519,24 @@ Resources:
           METRICS_NAMESPACE: ClearingAdvisor
           ENVIRONMENT: !Ref Environment
           LOG_LEVEL: !Ref LogLevel
+
+  # Routes a failed ASYNC invocation of DailyScraper (every schedule that
+  # triggers it - EventBridge Scheduler and classic Rules alike - invokes
+  # it asynchronously) to DailyScraperDLQ above, after Lambda's own 2
+  # automatic retries are exhausted. Qualifier '$LATEST' because every
+  # schedule invokes the unqualified function, not an alias/version (only
+  # SearchCourses uses the 'live' alias pattern - DailyScraper has no
+  # alias). MaximumRetryAttempts left at the default (2) intentionally -
+  # this only changes what happens AFTER retries are exhausted, not the
+  # retry behaviour itself.
+  DailyScraperEventInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref DailyScraperFunction
+      Qualifier: '$LATEST'
+      DestinationConfig:
+        OnFailure:
+          Destination: !GetAtt DailyScraperDLQ.Arn
 
   WarmUpFunction:
     Type: AWS::Lambda::Function
