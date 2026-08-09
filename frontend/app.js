@@ -41,6 +41,13 @@ const PAGE = 10;
 // (e.g. "PPE" or "MORSE" are course names, never A-level/BTEC subjects).
 // Static list rather than a server round-trip: this never changes at
 // runtime, unlike course subjects which are looked up server-side.
+// Sorted alphabetically (not grouped by A-level/BTEC as originally listed
+// here) so the "Your qualifications" autocomplete opens with subjects in
+// order rather than in this array's declaration order - purely a
+// presentation change, .sort() runs once at load and every other lookup
+// below (exact/fuzzy match, validation) is index-based against the
+// equally-sorted _LOWER array, so none of that behaviour depends on the
+// original grouping.
 const VALID_QUALIFICATION_SUBJECTS = [
   // Common A-level subjects
   'Mathematics', 'Further Mathematics', 'Physics', 'Chemistry', 'Biology',
@@ -57,8 +64,9 @@ const VALID_QUALIFICATION_SUBJECTS = [
   'Creative Digital Media Production', 'Travel and Tourism', 'Hospitality',
   'Enterprise and Entrepreneurship', 'Construction and the Built Environment',
   'Applied Law', 'Applied Psychology',
-];
-// Lower-cased once for fast exact/substring lookups.
+].sort((a, b) => a.localeCompare(b));
+// Lower-cased once for fast exact/substring lookups - derived from the
+// already-sorted array above, so it stays index-aligned with it.
 const VALID_QUALIFICATION_SUBJECTS_LOWER = VALID_QUALIFICATION_SUBJECTS.map((s) => s.toLowerCase());
 
 const el = (id) => document.getElementById(id);
