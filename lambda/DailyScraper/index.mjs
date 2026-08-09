@@ -292,6 +292,21 @@ async function processOne(u, results) {
   } catch (e) {
     console.error(JSON.stringify({ level: 'ERROR', msg: 'drift flag write failed', providerCode: u.providerCode, error: e.message }));
   }
+
+  // Structured per-university log line (one per run, every run) purely so
+  // "age of most recent data per university" is queryable via a CloudWatch
+  // Logs Insights `stats latest(checkedAt) by universityName` - the
+  // DynamoDB record above already holds lastAutomatedCheck, but Grafana's
+  // provisioned datasource on this project is CloudWatch-only (no
+  // DynamoDB/HTTP plugin - see stacks/grafana.yaml), so the freshness
+  // dashboard needs this data to exist in CloudWatch Logs, not just
+  // DynamoDB. Deliberately a separate log line/msg from the main 'scrape
+  // complete' summary line, so per-university freshness can be queried
+  // without parsing the aggregate line.
+  console.log(JSON.stringify({
+    level: 'INFO', msg: 'university-check', providerCode: u.providerCode,
+    universityName: u.universityName, checkedAt: nowIso, clearingPageStatus,
+  }));
 }
 
 export const handler = async () => {

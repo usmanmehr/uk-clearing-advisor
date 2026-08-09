@@ -1,0 +1,257 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "type": "dashboard",
+        "enable": true,
+        "hide": true,
+        "name": "Annotations & Alerts"
+      }
+    ]
+  },
+  "editable": true,
+  "schemaVersion": 39,
+  "title": "UK Clearing Advisor - Data Freshness & Scraper Health",
+  "description": "At-a-glance check that the daily/Results-Day scraper is running on schedule and that clearing-page data shown on the live site is current. Separate from the 'Access & Geography' dashboard - this one is about data trust, not traffic.",
+  "tags": [
+    "clearing-advisor"
+  ],
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Last successful scrape",
+      "type": "stat",
+      "description": "Time since DailyScraper last completed a full run (logs 'scrape complete'). If this grows well beyond the current scraper interval (10-30 min around Results Day, otherwise hourly/daily), the schedule has stopped firing or the function is failing before it finishes.",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "eu-west-2",
+          "logGroupNames": ["/aws/lambda/ClearingAdvisor-DailyScraper"],
+          "expression": "filter msg = 'scrape complete' | stats latest(@timestamp) as lastScrape | sort lastScrape desc | limit 1",
+          "statsGroups": ["lastScrape"],
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeFromNow"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "DLQ messages waiting (failed invocations)",
+      "type": "stat",
+      "description": "Messages in ClearingAdvisor-DailyScraperDLQ - a scrape run that failed both automatic Lambda retries and was routed here by the OnFailure destination. Should be 0. Any non-zero value means real scrape failures are going unnoticed.",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "AWS/SQS",
+          "metricName": "ApproximateNumberOfMessagesVisible",
+          "statistic": "Maximum",
+          "period": "300",
+          "dimensions": {
+            "QueueName": "ClearingAdvisor-DailyScraperDLQ"
+          },
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Scrape errors (last 24h)",
+      "type": "stat",
+      "description": "ScraperErrorCount metric, summed - individual clearing-page fetch failures within a run (network/timeout/DNS), NOT the same as a whole-run DLQ failure. A handful is normal (some university sites are flaky); a sustained high count means something changed.",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "ClearingAdvisor",
+          "metricName": "ScraperErrorCount",
+          "statistic": "Sum",
+          "period": "86400",
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Clearing pages currently unreachable / blocked",
+      "type": "stat",
+      "description": "Most recent ClearingPageUnreachableCount + ClearingPageBlockedCount from the latest run - how many universities' clearing links are currently flagged dead or anti-bot-blocked to students. This is expected to be non-zero (some university sites genuinely move pages) - watch the trend, not just the number.",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "ClearingAdvisor",
+          "metricName": "ClearingPageUnreachableCount",
+          "statistic": "Maximum",
+          "period": "86400",
+          "label": "Unreachable",
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" }
+        },
+        {
+          "refId": "B",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "ClearingAdvisor",
+          "metricName": "ClearingPageBlockedCount",
+          "statistic": "Maximum",
+          "period": "86400",
+          "label": "Blocked",
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Scraper invocation history (invocations / errors / throttles)",
+      "type": "timeseries",
+      "description": "AWS/Lambda service metrics for the DailyScraper function itself - a direct record of the schedule actually firing, and whether each invocation errored or was throttled (concurrency limit hit), independent of the application-level metrics above.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "AWS/Lambda",
+          "metricName": "Invocations",
+          "statistic": "Sum",
+          "period": "300",
+          "label": "Invocations",
+          "dimensions": {
+            "FunctionName": "ClearingAdvisor-DailyScraper"
+          },
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" }
+        },
+        {
+          "refId": "B",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "AWS/Lambda",
+          "metricName": "Errors",
+          "statistic": "Sum",
+          "period": "300",
+          "label": "Errors",
+          "dimensions": {
+            "FunctionName": "ClearingAdvisor-DailyScraper"
+          },
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" }
+        },
+        {
+          "refId": "C",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "AWS/Lambda",
+          "metricName": "Throttles",
+          "statistic": "Sum",
+          "period": "300",
+          "label": "Throttles",
+          "dimensions": {
+            "FunctionName": "ClearingAdvisor-DailyScraper"
+          },
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Changes detected per run",
+      "type": "timeseries",
+      "description": "ScraperChangesDetected per run - how many universities' clearing-page status appeared to change since the previous check. Context for the invocation history above: a run with 0 changes and 0 errors is a normal, healthy 'nothing changed today' result, not a sign the scraper did nothing.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "region": "eu-west-2",
+          "namespace": "ClearingAdvisor",
+          "metricName": "ScraperChangesDetected",
+          "statistic": "Sum",
+          "period": "300",
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Data age per university (stalest first)",
+      "type": "table",
+      "description": "Time since each university's clearing page was last checked by the scraper - from the 'university-check' log line written on every run. Universities at the top of this list have the oldest data currently shown to students; if any entry is far older than the current scraper interval, that university is being skipped or failing silently before its log line writes.",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 22 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "eu-west-2",
+          "logGroupNames": ["/aws/lambda/ClearingAdvisor-DailyScraper"],
+          "expression": "filter msg = 'university-check' | stats latest(checkedAt) as lastChecked, latest(clearingPageStatus) as status by universityName | sort lastChecked asc",
+          "statsGroups": ["universityName"],
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" }
+        }
+      ],
+      "timeFrom": "48h"
+    }
+  ],
+  "refresh": "1m"
+}

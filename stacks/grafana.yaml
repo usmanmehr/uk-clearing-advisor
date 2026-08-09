@@ -283,6 +283,7 @@ Resources:
                 path: /var/lib/grafana/dashboards
           EOF
           aws s3 cp s3://${ArtifactsBucket}/grafana/dashboard.json /var/lib/grafana/dashboards/dashboard.json --region ${AWS::Region}
+          aws s3 cp s3://${ArtifactsBucket}/grafana/freshness-dashboard.json /var/lib/grafana/dashboards/freshness-dashboard.json --region ${AWS::Region}
           chown -R grafana:grafana /var/lib/grafana/dashboards
 
           # OS patch check on boot + daily cron. Belt-and-suspenders with the
