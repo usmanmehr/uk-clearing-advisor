@@ -4,6 +4,58 @@ All notable changes to UK Clearing Advisor are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## 2026-08-09 (2)
+
+### Fixed - stale app.js/styles.css in returning visitors' browsers
+- Root cause: `frontend/index.html`/`faq.html` referenced `/app.js` and
+  `/styles.css` by a bare, never-changing path, and `deploy.sh` uploaded
+  them via a plain `aws s3 sync` with no `Cache-Control` set at all. With
+  no explicit header, CloudFront's `CachingOptimized` policy fell back to
+  its own default TTL (1 day) for every static file - including
+  `index.html` - and a browser that had already fetched `app.js` could
+  keep serving it from its own cache well past that, since nothing ever
+  told it to check again. `create-invalidation --paths "/*"` on every
+  deploy fixed CloudFront's edge, but did nothing for a browser that
+  already had the old file - clearing the edge cache was never going to
+  fix this, the staleness was one hop further out than that.
+- Added `scripts/build_frontend.py`: content-hashes `app.js`/`styles.css`
+  (short sha256 prefix in the filename, e.g. `app.e22473595b.js`) into a
+  new `build/frontend/` (git-ignored, same as the Lambda `build/` dir),
+  rewriting every HTML file's `<script src>`/`<link href>` to match.
+  `frontend/` itself (the checked-in source) is untouched - it always
+  keeps the plain `/app.js` reference for readability; only the generated
+  build output is hashed.
+- `deploy.sh` now runs the build step, then uploads in three
+  `aws s3 cp --recursive` passes (deliberately `cp`, not `sync` - `sync`
+  compares size/mtime and would silently skip re-applying a changed
+  `--cache-control` on a file that looks unchanged within the same run)
+  each scoped to one Cache-Control policy, then one final `sync --delete`
+  pass to prune anything no longer present (e.g. last deploy's old-hash
+  `app.<oldhash>.js`):
+  - `*.html` -> `no-cache` (every visit revalidates against
+    CloudFront/S3 - a 304 if unchanged, a fresh copy immediately if not).
+  - hashed `app.*.js`/`styles.*.css` -> `public, max-age=31536000,
+    immutable` (safe forever - the filename itself changes the moment the
+    content does, so there's no stale-content-under-the-same-URL risk).
+  - everything else (`robots.txt`, `sitemap.xml`, `geo-blocked.html`) ->
+    `public, max-age=3600` - not hashed, but also not something that needs
+    to reach visitors within seconds of a deploy.
+- Deployed live and verified directly against S3 (`head-object`): the 3
+  target files carry exactly the intended `Cache-Control`, and the old
+  bare-named `app.js`/`styles.css` are confirmed deleted (404) from the
+  bucket. CloudFront invalidated and confirmed `Completed`. Could not
+  fully verify the header round-trips unmodified through CloudFront from
+  this session's dev host, since the site's GB-only geo-restriction
+  returns `geo-blocked.html` (also correctly `no-cache`) to a non-UK
+  request - AWS's own docs confirm `CachingOptimized`'s MinTTL is 1
+  second, so it does not force any floor above what's set here, but a
+  from-the-UK spot-check is worth doing to close that last gap.
+- Net effect: the moment a deploy runs, every visitor gets the new
+  `app.js`/`styles.css` on their very next load - no hard refresh, no
+  waiting out a cache TTL, and no dependency on remembering to invalidate
+  CloudFront (that step now only matters for `index.html`/other unhashed
+  files reaching new visitors slightly sooner, not for correctness).
+
 ## 2026-07-31
 
 ### Added - CloudWatch visibility into API Gateway status codes

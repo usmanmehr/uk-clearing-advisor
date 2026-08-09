@@ -421,6 +421,17 @@ but worth stating plainly rather than skipping.
 
 ## Prioritised recommendations
 
+0. ~~Fix browser/edge cache staleness on `app.js`/`styles.css`~~ - **Done**
+   (2026-08-09): this review's Performance Efficiency section did not
+   originally flag it, but a real incident on a related project (the 2027
+   site) surfaced the same root cause here first - `frontend/index.html`
+   referenced `/app.js`/`/styles.css` by a bare, unversioned path, and
+   `deploy.sh` set no `Cache-Control` on upload, so CloudFront fell back to
+   its own default TTL and a returning visitor's browser had no signal to
+   ever re-fetch. Fixed with content-hashed filenames
+   (`scripts/build_frontend.py`) + explicit per-file-type `Cache-Control`
+   in `deploy.sh` (`no-cache` for HTML, `immutable`/1yr for the hashed
+   assets). See CHANGELOG 2026-08-09 (2) for full verification.
 1. ~~Fix `checkOriginSecret()`'s fail-open default~~ - **Done** (2026-07-30):
    removed the weak placeholder default from `ApiOriginSecret`/
    `OriginSecret` across `compute.yaml`, `cdn.yaml`, and `grafana.yaml` and
