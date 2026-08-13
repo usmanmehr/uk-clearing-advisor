@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 import {
-  ddb, GetCommand, ScanCommand, PutCommand,
+  ddb, GetCommand, ScanCommand, QueryCommand, PutCommand,
   SUBJECTS, REQUIRED_SUBJECTS, gradeTotal, resolveSubject, maskIp,
   QUALIFICATION_TYPES, totalQualificationSlots,
   putMetric, log, json, errorResponse, checkRateLimit, checkOriginSecret, ENVIRONMENT,
@@ -14,6 +14,58 @@ const CONTACTS_TABLE = process.env.CONTACTS_TABLE;
 const SUBJECT_DEFAULTS_TABLE = process.env.SUBJECT_DEFAULTS_TABLE;
 const QUERY_CACHE_TABLE = process.env.QUERY_CACHE_TABLE;
 const RATE_LIMITS_TABLE = process.env.RATE_LIMITS_TABLE;
+// Only set once the confirmed-vacancies feature has been deployed (see
+// ScrapedCoursesTable in stacks/data.yaml) - undefined/missing is handled
+// gracefully below (loadConfirmedCourses returns an empty map), so this
+// Lambda keeps working exactly as before if this env var is ever absent.
+const SCRAPED_COURSES_TABLE = process.env.SCRAPED_COURSES_TABLE;
+
+// The only 4 of 44 seeded universities this project has a real, verified
+// per-course scraper for (see lambda/ScrapeConfirmedCourses - every other
+// university's clearing page only loads its course list via client-side
+// JS/AJAX, which cannot be scraped here). Hardcoded, not derived from
+// ScrapedCoursesTable's contents, so a scrape that returns zero rows for
+// one of these 4 (e.g. a broken parser) never gets mistaken for "this
+// university just has no confirmed courses this search" vs "this
+// university isn't one of the 4 we scrape at all" - the two are different
+// facts and this list is the source of truth for which is which.
+const CONFIRMED_PROVIDER_CODES = ['0094', '0132', '0137', '0082'];
+
+// Scraped course titles come from real, external HTML and can contain
+// entities (confirmed on UCL's page, e.g. "&amp;") that must never reach
+// a student's browser unescaped - decoded once here rather than relying
+// on every future caller of this data to remember to.
+function decodeHtmlEntities(text) {
+  return (text || '')
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// A real scraped course title (e.g. "BSc Accounting and Finance") is never
+// going to exactly equal one of this project's canonical subject names
+// (e.g. "Accounting and Finance") the way resolveSubject()'s own matching
+// works - so this is deliberately a looser, separate check: does the
+// canonical subject name appear as a whole word in the real title, OR does
+// the student's own raw typed text appear in it. Two independent chances
+// to match because either one alone misses real cases (a whole-word
+// canonical-subject match won't catch "Economics and Data Science" against
+// a canonical name of "Data Science" spanning multiple words; a raw-text
+// substring match won't catch a student who typed "econ" against a title
+// that says "Economics").
+function courseMatchesInterest(courseTitle, resolvedSubject, rawInterestText) {
+  const title = decodeHtmlEntities(courseTitle).toLowerCase();
+  if (resolvedSubject) {
+    const re = new RegExp(`\\b${escapeRegex(resolvedSubject.toLowerCase())}\\b`);
+    if (re.test(title)) return true;
+  }
+  const raw = (rawInterestText || '').trim().toLowerCase();
+  if (raw.length >= 3 && title.includes(raw)) return true;
+  return false;
+}
 
 // Specialist subjects are only offered by specific UK schools. We restrict
 // these to the actual providers (by providerCode) so non-offering universities
@@ -54,6 +106,32 @@ async function loadReferenceData() {
   CONTACTS_CACHE = contacts.Items || [];
   SUBJECT_DEFAULTS_CACHE = {};
   for (const d of defaults.Items || []) SUBJECT_DEFAULTS_CACHE[d.subjectGroup] = d;
+}
+
+// Queries ScrapedCoursesTable for the 4 known universities, returns
+// { providerCode: [course, ...] }. Deliberately never throws and never
+// blocks the main estimated-mode search - a DynamoDB error or a missing
+// table (e.g. this Lambda deployed before the confirmed-vacancies table
+// exists) just means confirmed courses are silently skipped for that
+// request, same as if a university simply had none. This is a strict
+// ADDITION to the existing search, never a dependency of it.
+async function loadConfirmedCourses() {
+  if (!SCRAPED_COURSES_TABLE) return {};
+  const byProvider = {};
+  await Promise.all(CONFIRMED_PROVIDER_CODES.map(async (providerCode) => {
+    try {
+      const res = await ddb.send(new QueryCommand({
+        TableName: SCRAPED_COURSES_TABLE,
+        KeyConditionExpression: 'providerCode = :p',
+        ExpressionAttributeValues: { ':p': providerCode },
+      }));
+      byProvider[providerCode] = res.Items || [];
+    } catch (e) {
+      log('WARN', { level: 'WARN', msg: 'confirmed courses query failed (skipping)', providerCode, error: e.message });
+      byProvider[providerCode] = [];
+    }
+  }));
+  return byProvider;
 }
 
 // Indicative clearing entry threshold, in real UCAS Tariff points (see
@@ -252,7 +330,10 @@ export const handler = async (event) => {
   }
 
   try {
-    await loadReferenceData();
+    // loadConfirmedCourses() never throws and is entirely independent of
+    // loadReferenceData() - run in parallel purely for latency, not
+    // because either depends on the other.
+    const [, confirmedByProvider] = await Promise.all([loadReferenceData(), loadConfirmedCourses()]);
 
     // STEP 3 - grade conversion.
     const candidateTotal = gradeTotal(body.subjects);
@@ -356,6 +437,71 @@ export const handler = async (event) => {
         subjectWarning,
         notes: u.notes || null,
       });
+
+      // Confirmed vacancies: real, scraped-per-course data for exactly the
+      // 4 universities this project has a verified static-HTML scraper for
+      // (see CONFIRMED_PROVIDER_CODES/ScrapeConfirmedCourses). Added as
+      // EXTRA result entries alongside the estimated one above for this
+      // same university - never replacing it, since the estimated entry
+      // still carries the salary/ranking context these don't. Only
+      // considered at all when there's real interest text to match
+      // against (courseMatchesInterest already returns false for an empty
+      // search) - matching every real course against nothing would dump
+      // all ~565 scraped rows into every unfiltered search.
+      const confirmedForThisUni = confirmedByProvider[u.providerCode] || [];
+      for (const cc of confirmedForThisUni) {
+        if (!courseMatchesInterest(cc.courseTitle, resolved, body.courseInterest)) continue;
+        // A real published entry requirement (currently only Lincoln
+        // publishes one, as UCAS Tariff points) is more trustworthy than
+        // the institution-tier-derived indicativeGrade() guess used for
+        // the estimated entries - used in preference to it when present,
+        // falling back to the same indicativeGrade() otherwise so this
+        // still participates correctly in the STEP 8 grade filter below.
+        const confirmedGradeNumeric = cc.minTariffPoints != null ? Number(cc.minTariffPoints) : gradeNumeric;
+        courses.push({
+          providerCode: u.providerCode,
+          universityName: u.universityName,
+          courseTitle: decodeHtmlEntities(cc.courseTitle),
+          ucasCode: cc.ucasCode || null,
+          region: u.region,
+          location: u.location,
+          russellGroup: !!u.russellGroup,
+          clearingStatus: u.clearingStatus,
+          statusBadge: badge,
+          typicalOffer: cc.minTariffPoints != null
+            ? `Published Clearing offer: ${cc.minTariffPoints} UCAS Tariff points`
+            : offerBand(confirmedGradeNumeric),
+          clearingGradeNumeric: confirmedGradeNumeric,
+          graduateProspects,
+          graduateProspectsYear: graduateProspects != null ? 'Complete University Guide 2027' : null,
+          graduateProspectsSource: u.graduateProspectsSource || null,
+          graduateProspectsSourceUrl: u.graduateProspectsSourceUrl || null,
+          _nationalMedianSalary: nationalMedianSalary,
+          highFliersRank: u.highFliersRank ?? null,
+          clearingPhone: u.clearingPhone || null,
+          clearingEmail: u.clearingEmail || null,
+          clearingPage: u.clearingPage || null,
+          clearingPageState: clearingPageState(u),
+          accommodationGuarantee: !!u.accommodationGuarantee,
+          hotlineOpens: u.hotlineOpens || null,
+          estimatedData: false,
+          courseLevelConfirmed: true,
+          // Real course-specific data - unlike the estimated entry's
+          // statusNote, this IS about the specific course, since it was
+          // scraped directly off the university's own Clearing course
+          // list. confirmedSourceUrl/confirmedScrapedAt let the frontend
+          // show exactly where and when this was checked, rather than
+          // asking a student to trust an unqualified claim.
+          statusNote: `Listed directly on ${u.universityName}'s own Clearing course page - not an estimate.`,
+          confirmedSourceUrl: cc.sourceUrl || null,
+          confirmedScrapedAt: cc.scrapedAt || null,
+          lastVerified: u.lastVerified || null,
+          lastAutomatedCheck: u.lastAutomatedCheck || null,
+          possibleStatusChange: false,
+          subjectWarning: null,
+          notes: u.notes || null,
+        });
+      }
     }
 
     // STEP 8 - filter by achievable grade + numeric thresholds.

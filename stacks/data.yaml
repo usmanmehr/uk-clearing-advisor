@@ -193,6 +193,44 @@ Resources:
         - { Key: Application, Value: uk-clearing-advisor }
         - { Key: Environment, Value: !Ref Environment }
 
+  # Real per-course vacancy data, scraped directly from a small set of
+  # university clearing pages whose course listings are genuine static
+  # server-rendered HTML (see WELL-ARCHITECTED.md / CHANGELOG - confirmed
+  # for exactly 4 of the 44 seeded universities: Manchester, UCL, Warwick,
+  # Lincoln. Every other university's clearing page only loads its course
+  # list via client-side JS/AJAX, which this project's Lambda-based scraper
+  # cannot execute). Deliberately a SEPARATE table from ClearingCacheTable/
+  # UniversityContactsTable - this is real, per-course, confirmed-on-a-
+  # specific-page data, not the estimated/national-average data the rest of
+  # the app serves, and the two must never be able to silently merge into
+  # one write path.
+  # TTL is intentionally short (see ScrapeConfirmedCoursesFunction's own
+  # scrapedAt/ttl fields) - if the scraper Lambda breaks or a site's HTML
+  # changes and scraping silently stops, this data must disappear rather
+  # than keep showing an increasingly stale "confirmed" course list that
+  # looks just as fresh as one scraped 5 minutes ago.
+  ScrapedCoursesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${TablePrefix}-ScrapedCourses'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      AttributeDefinitions:
+        - { AttributeName: providerCode, AttributeType: S }
+        - { AttributeName: courseKey, AttributeType: S }
+      KeySchema:
+        - { AttributeName: providerCode, KeyType: HASH }
+        - { AttributeName: courseKey, KeyType: RANGE }
+      Tags:
+        - { Key: Application, Value: uk-clearing-advisor }
+        - { Key: Environment, Value: !Ref Environment }
+
 Outputs:
   UniversityContactsTable:
     Value: !Ref UniversityContactsTable
@@ -218,3 +256,6 @@ Outputs:
   CUGRankingsTable:
     Value: !Ref CUGRankingsTable
     Export: { Name: !Sub '${AWS::StackName}-CUGRankingsTable' }
+  ScrapedCoursesTable:
+    Value: !Ref ScrapedCoursesTable
+    Export: { Name: !Sub '${AWS::StackName}-ScrapedCoursesTable' }

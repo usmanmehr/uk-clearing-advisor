@@ -13,7 +13,8 @@ SHARED = os.path.join(LAMBDA_DIR, "shared", "shared.mjs")
 GRADING = os.path.join(LAMBDA_DIR, "shared", "grading.mjs")
 OUT = os.path.join(ROOT, "build")
 FUNCTIONS = ["SearchCourses", "GetSubjects", "GetUniversities", "GetScholarships",
-             "GenerateExport", "DailyScraper", "WarmUp", "ScheduleManager"]
+             "GenerateExport", "DailyScraper", "WarmUp", "ScheduleManager",
+             "ScrapeConfirmedCourses"]
 # Health is standalone (no shared.mjs dependency - deliberately does not use
 # checkOriginSecret, see lambda/Health/index.mjs for why), so it is zipped
 # without shared.mjs rather than via the FUNCTIONS loop.

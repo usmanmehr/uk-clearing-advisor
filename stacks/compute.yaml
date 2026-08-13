@@ -15,6 +15,7 @@ Parameters:
   RateLimitsTable: { Type: String, Default: ClearingAdvisor-RateLimits }
   ClearingCacheTable: { Type: String, Default: ClearingAdvisor-ClearingCache }
   ChangeLogTable: { Type: String, Default: ClearingAdvisor-ChangeLog }
+  ScrapedCoursesTable: { Type: String, Default: ClearingAdvisor-ScrapedCourses }
   ExportsBucket: { Type: String, Default: uk-clearing-advisor-exports-REPLACE_ACCOUNT_ID }
   SearchFunctionName: { Type: String, Default: ClearingAdvisor-SearchCourses }
   ApiOriginSecret:
@@ -89,6 +90,12 @@ Resources:
     Properties:
       LogGroupName: /aws/lambda/ClearingAdvisor-CostReporter
       RetentionInDays: 14
+  ScrapeConfirmedCoursesLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: /aws/lambda/ClearingAdvisor-ScrapeConfirmedCourses
+      RetentionInDays: 14
 
   # ---------------- IAM roles (least privilege) ----------------
   SearchCoursesRole:
@@ -120,6 +127,13 @@ Resources:
                   - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ClearingCacheTable}'
                   - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${QueryCacheTable}'
                   - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RateLimitsTable}'
+              # Read-only, and only Query (never Scan) - SearchCourses only
+              # ever looks up the 4 known providerCodes it already has a
+              # scraper for (see CONFIRMED_PROVIDER_CODES in the Lambda
+              # code), never needs to enumerate the whole table.
+              - Effect: Allow
+                Action: ['dynamodb:Query']
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ScrapedCoursesTable}'
               - Effect: Allow
                 Action: cloudwatch:PutMetricData
                 Resource: '*'
@@ -337,6 +351,35 @@ Resources:
                 Condition:
                   StringEquals: { 'cloudwatch:namespace': ClearingAdvisor }
 
+  # No outbound internet-facing permission needed beyond DDB write + metrics
+  # - fetch() to the 4 university sites is a normal outbound HTTPS call from
+  # inside the Lambda's default (non-VPC) networking, same as
+  # DailyScraperRole above needs nothing extra for its own outbound fetches.
+  ScrapeConfirmedCoursesRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: scraped-courses-write
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['dynamodb:PutItem']
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ScrapedCoursesTable}'
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals: { 'cloudwatch:namespace': ClearingAdvisor }
+
   # EventBridge Scheduler (not a classic Events::Rule) invokes targets via an
   # assumed IAM role rather than a resource-based Lambda permission, and
   # supports a real StartDate/EndDate - which is why this is used for the
@@ -385,7 +428,7 @@ Resources:
       TracingConfig: { Mode: Active }
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/SearchCourses-v20.zip
+        S3Key: lambda/SearchCourses-v21.zip
       Environment:
         Variables:
           CONTACTS_TABLE: !Ref ContactsTable
@@ -394,6 +437,7 @@ Resources:
           CLEARING_CACHE_TABLE: !Ref ClearingCacheTable
           QUERY_CACHE_TABLE: !Ref QueryCacheTable
           RATE_LIMITS_TABLE: !Ref RateLimitsTable
+          SCRAPED_COURSES_TABLE: !Ref ScrapedCoursesTable
           METRICS_NAMESPACE: ClearingAdvisor
           ENVIRONMENT: !Ref Environment
           LOG_LEVEL: !Ref LogLevel
@@ -599,6 +643,35 @@ Resources:
           COST_TAG_KEY: Application
           COST_TAG_VALUE: uk-clearing-advisor
 
+  # Scrapes real per-course vacancy data from the 4 universities whose
+  # clearing pages are genuine static HTML (see lambda/ScrapeConfirmedCourses
+  # for the full explanation and per-site parsers - Manchester, UCL,
+  # Warwick, Lincoln only, out of all 44 seeded universities). Deliberately
+  # standalone: nothing else in this stack invokes or depends on it yet, and
+  # it writes only to ScrapedCoursesTable - a table SearchCourses does not
+  # read. This lets the scraping/parsing logic be deployed, run, and
+  # verified against live sites with zero risk to the current, working
+  # student-facing search.
+  ScrapeConfirmedCoursesFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ScrapeConfirmedCoursesLogGroup
+    Properties:
+      FunctionName: ClearingAdvisor-ScrapeConfirmedCourses
+      Runtime: nodejs22.x
+      Handler: index.handler
+      MemorySize: 256
+      Timeout: 60
+      Role: !GetAtt ScrapeConfirmedCoursesRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactsBucket
+        S3Key: lambda/ScrapeConfirmedCourses-v1.zip
+      Environment:
+        Variables:
+          SCRAPED_COURSES_TABLE: !Ref ScrapedCoursesTable
+          METRICS_NAMESPACE: ClearingAdvisor
+          ENVIRONMENT: !Ref Environment
+          LOG_LEVEL: !Ref LogLevel
+
   # Daily scraper at 07:00 UTC, year-round EXCEPT 12-13 Aug 2026, which get
   # their own dedicated, denser schedules below (Aug12Schedule,
   # Aug13MorningSchedule, Aug13EveningSchedule). Split into two
@@ -723,6 +796,65 @@ Resources:
         Arn: !GetAtt DailyScraperFunction.Arn
         RoleArn: !GetAtt RampUpScraperSchedulerRole.Arn
 
+  # Dedicated scheduler role, not a reuse of RampUpScraperSchedulerRole above -
+  # that role's policy is hardcoded to DailyScraper's specific function ARN,
+  # and broadening it to cover a second function would widen what an
+  # existing, already-deployed role can invoke. A new role scoped to only
+  # this one function keeps the blast radius of each role exactly as narrow
+  # as what it actually needs.
+  ScrapeConfirmedCoursesSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref 'AWS::AccountId'
+              ArnLike:
+                'aws:SourceArn': !Sub 'arn:aws:scheduler:${AWS::Region}:${AWS::AccountId}:schedule-group/default'
+      Policies:
+        - PolicyName: invoke-scrape-confirmed-courses
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['lambda:InvokeFunction']
+                Resource: !GetAtt ScrapeConfirmedCoursesFunction.Arn
+
+  # Every 15 minutes, 12-14 Aug 2026 only (day before Results Day through
+  # the day after) - confirmed vacancy data (especially Lincoln's live
+  # per-course open/closed status, see that parser's comment) is exactly
+  # the kind of thing that goes stale fastest around Results Day itself,
+  # and ScrapedCoursesTable's own 90-minute TTL (see
+  # lambda/ScrapeConfirmedCourses) already guarantees a stale scrape
+  # disappears rather than lingers if this schedule or the Lambda stops
+  # working. Bounded to 3 days rather than left running indefinitely - this
+  # is a Results-Day feature, not a year-round one, matching the same
+  # StartDate/EndDate pattern already used for DailyScraper's Results-Day
+  # schedules above.
+  ScrapeConfirmedCoursesSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: ClearingAdvisor-ScrapeConfirmedCourses
+      Description: Results Day (13-14 Aug 2026) - every 15 minutes.
+      ScheduleExpression: 'rate(15 minutes)'
+      ScheduleExpressionTimezone: UTC
+      # No StartDate: this feature is being deployed for the first time
+      # DURING the original 12-14 Aug window, so an in-the-past StartDate
+      # would be rejected by EventBridge Scheduler ("cannot be earlier than
+      # 5 minutes ago"). Starting immediately on creation/update instead -
+      # functionally the same outcome (runs now through the EndDate below).
+      EndDate: '2026-08-14T23:59:00.000Z'
+      FlexibleTimeWindow: { Mode: 'OFF' }
+      State: ENABLED
+      Target:
+        Arn: !GetAtt ScrapeConfirmedCoursesFunction.Arn
+        RoleArn: !GetAtt ScrapeConfirmedCoursesSchedulerRole.Arn
+
   # WarmUp on Results Day (13 Aug 2026) at 05:00 UTC = 06:00 BST.
   WarmUpSchedule:
     Type: AWS::Events::Rule
@@ -770,4 +902,5 @@ Outputs:
   GetUniversitiesArn: { Value: !GetAtt GetUniversitiesFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-GetUniversitiesArn' } }
   GetScholarshipsArn: { Value: !GetAtt GetScholarshipsFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-GetScholarshipsArn' } }
   HealthArn: { Value: !GetAtt HealthFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-HealthArn' } }
+  ScrapeConfirmedCoursesArn: { Value: !GetAtt ScrapeConfirmedCoursesFunction.Arn, Export: { Name: !Sub '${AWS::StackName}-ScrapeConfirmedCoursesArn' } }
   SearchCoursesName: { Value: !Ref SearchCoursesFunction }
