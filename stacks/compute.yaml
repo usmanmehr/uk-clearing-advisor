@@ -446,7 +446,7 @@ Resources:
       Role: !GetAtt GetUniversitiesRole.Arn
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/GetUniversities-v2.zip
+        S3Key: lambda/GetUniversities-v3.zip
       Environment:
         Variables:
           CONTACTS_TABLE: !Ref ContactsTable

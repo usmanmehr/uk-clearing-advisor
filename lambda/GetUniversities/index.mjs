@@ -14,8 +14,18 @@ export const handler = async (event) => {
   }
   try {
     const res = await ddb.send(new ScanCommand({ TableName: CONTACTS_TABLE }));
-    const universities = (res.Items || []).sort((a, b) =>
-      (a.universityName || '').localeCompare(b.universityName || ''));
+    // Excludes universities that do NOT enter Clearing at all (e.g. Cambridge,
+    // Oxford - clearingStatus "Closed"), matching the same filter SearchCourses
+    // already applies to search results. This endpoint isn't currently
+    // rendered as a browsable list (only used for the hero "checked X ago"
+    // freshness stat), but there is no reason for the API response itself to
+    // include universities a student could never actually apply to via
+    // Clearing, and it keeps this endpoint consistent for anything that
+    // reads it in future (e.g. a browse view, or the real scraped-course
+    // feature) without each caller having to remember to filter separately.
+    const universities = (res.Items || [])
+      .filter((u) => (u.clearingStatus || '').toLowerCase() !== 'closed')
+      .sort((a, b) => (a.universityName || '').localeCompare(b.universityName || ''));
     return json(200, { universities, count: universities.length });
   } catch (e) {
     log('ERROR', { level: 'ERROR', msg: 'get universities failed', requestId, error: e.message });
