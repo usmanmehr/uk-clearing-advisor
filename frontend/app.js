@@ -363,6 +363,18 @@ function courseCard(c) {
     }
   }
   const warn = c.subjectWarning ? `<div class="warn">${c.subjectWarning}</div>` : '';
+  // courseLevelConfirmed (set server-side - see SearchCourses) marks a
+  // result scraped directly off a university's own real Clearing course
+  // list, for the small set of universities this project has a verified
+  // static-HTML scraper for (see ScrapeConfirmedCourses) - a genuinely
+  // different kind of data to every other result on the page, which is
+  // all estimated/indicative. Deliberately the OPPOSITE badge colour/
+  // wording to the existing "Rough guide, not confirmed" amber badge below
+  // (green, "Confirmed vacancy"), not just a variant of it, so the
+  // distinction is obvious at a glance rather than something only a
+  // careful reader of the small print would notice - same reasoning this
+  // project already applied to offerBand()'s plain-English wording.
+  const confirmedBadge = c.courseLevelConfirmed ? ' <span class="badge Green">Confirmed vacancy</span>' : '';
   const est = c.estimatedData ? ' <span class="badge Amber">Rough guide, not confirmed</span>' : '';
   // Set by the daily automated check when this university's clearing page
   // may have changed since it was last confirmed - advisory, not definitive
@@ -398,14 +410,26 @@ function courseCard(c) {
   }
   const sourceLine = sources.length ? `<div class="sources">Sources: ${sources.join(' &middot; ')}</div>` : '';
 
-  return `<article class="course">
+  // Points at the university's own Clearing course listing page (not the
+  // general clearingPage link above, which just goes to the university's
+  // Clearing homepage) - lets a student jump straight to the exact page
+  // this was scraped from and check it themselves, rather than only
+  // taking the badge's word for it.
+  const confirmedSourceLine = c.courseLevelConfirmed && c.confirmedSourceUrl
+    ? `<div class="sources">Listed on <a href="${c.confirmedSourceUrl}" target="_blank" rel="noopener">the university's own Clearing course page</a>${
+        c.confirmedScrapedAt ? ` (checked ${new Date(c.confirmedScrapedAt).toLocaleString('en-GB')})` : ''
+      }</div>`
+    : '';
+
+  return `<article class="course${c.courseLevelConfirmed ? ' course-confirmed' : ''}">
     <h3>${c.universityName}</h3>
     <div class="meta">${c.courseTitle}${c.ucasCode ? ` &middot; UCAS ${c.ucasCode}` : ''} &middot; ${c.location} &middot;
-      <span class="badge ${badge.colour}">${badge.label}</span>${est}</div>
+      <span class="badge ${badge.colour}">${badge.label}</span>${confirmedBadge}${est}</div>
     <div class="stat-row">
       ${stats.join('\n      ')}
     </div>
     ${offerLine}
+    ${confirmedSourceLine}
     ${sourceLine}
     ${warn}
     ${driftWarn}

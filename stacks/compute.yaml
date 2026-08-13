@@ -127,6 +127,13 @@ Resources:
                   - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ClearingCacheTable}'
                   - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${QueryCacheTable}'
                   - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RateLimitsTable}'
+              # Read-only, and only Query (never Scan) - SearchCourses only
+              # ever looks up the 4 known providerCodes it already has a
+              # scraper for (see CONFIRMED_PROVIDER_CODES in the Lambda
+              # code), never needs to enumerate the whole table.
+              - Effect: Allow
+                Action: ['dynamodb:Query']
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ScrapedCoursesTable}'
               - Effect: Allow
                 Action: cloudwatch:PutMetricData
                 Resource: '*'
@@ -421,7 +428,7 @@ Resources:
       TracingConfig: { Mode: Active }
       Code:
         S3Bucket: !Ref ArtifactsBucket
-        S3Key: lambda/SearchCourses-v20.zip
+        S3Key: lambda/SearchCourses-v21.zip
       Environment:
         Variables:
           CONTACTS_TABLE: !Ref ContactsTable
@@ -430,6 +437,7 @@ Resources:
           CLEARING_CACHE_TABLE: !Ref ClearingCacheTable
           QUERY_CACHE_TABLE: !Ref QueryCacheTable
           RATE_LIMITS_TABLE: !Ref RateLimitsTable
+          SCRAPED_COURSES_TABLE: !Ref ScrapedCoursesTable
           METRICS_NAMESPACE: ClearingAdvisor
           ENVIRONMENT: !Ref Environment
           LOG_LEVEL: !Ref LogLevel

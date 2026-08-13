@@ -167,6 +167,11 @@ button, a, input, select, label { touch-action: manipulation; }
   padding: 1.1rem 1.2rem; background: #fff; transition: box-shadow .15s, transform .05s;
 }
 .course:hover { box-shadow: var(--shadow); }
+/* Confirmed vacancy (real, scraped course data - see courseLevelConfirmed
+   in app.js) gets a green left border instead of the default gold one, so
+   the distinction from every other (estimated/indicative) card is visible
+   even at a glance, before reading any badge text. */
+.course.course-confirmed { border-left-color: var(--green); }
 .course h3 { margin: 0 0 .2rem; color: var(--navy); font-size: 1.15rem; }
 .course .meta { color: var(--muted); font-size: .88rem; margin-bottom: .6rem; }
 .stat-row { display: flex; flex-wrap: wrap; gap: 1.5rem; margin: .6rem 0; padding: .6rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
